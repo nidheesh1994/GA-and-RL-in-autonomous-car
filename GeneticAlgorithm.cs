@@ -4,23 +4,25 @@ using UnityEngine;
 public class GeneticAlgorithm : MonoBehaviour
 {
     public int populationSize = 50;
-    public int geneLength = 10000;
+    public int initialGeneLength = 100; // Starting gene length
     public float mutationRate = 0.01f;
     public float crossoverRate = 0.7f;
     public int generations = 100;
-    
+
     [SerializeField] private GameObject robotPrefab;
 
     private List<List<Vector2>> population;
     private List<float> fitnessScores;
     private List<RobotController> robotInstances;
-    private List<bool> activeIndividuals; // Tracks which robots are still active
+    private List<bool> activeIndividuals;
     private int currentStep = 0;
     private int currentGeneration = 0;
-
+    private int currentGeneLength; // Tracks the current maximum gene length
 
     private void Start()
     {
+        QualitySettings.SetQualityLevel(0, true);
+        currentGeneLength = initialGeneLength; // Initialize to starting value
         InitializePopulation();
         InitializeRobots();
     }
@@ -30,22 +32,22 @@ public class GeneticAlgorithm : MonoBehaviour
         population = new List<List<Vector2>>();
         for (int i = 0; i < populationSize; i++)
         {
-            population.Add(CreateIndividual());
+            population.Add(CreateIndividual(currentGeneLength));
         }
         fitnessScores = new List<float>(new float[populationSize]);
         activeIndividuals = new List<bool>(new bool[populationSize]);
         for (int i = 0; i < populationSize; i++)
         {
-            activeIndividuals[i] = true; // All start active
+            activeIndividuals[i] = true;
         }
     }
 
-    private List<Vector2> CreateIndividual()
+    private List<Vector2> CreateIndividual(int length)
     {
         List<Vector2> individual = new List<Vector2>();
-        for (int j = 0; j < geneLength; j++)
+        for (int j = 0; j < length; j++)
         {
-            individual.Add(new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
+            individual.Add(new Vector2(Random.Range(0f, 1f), Random.Range(-1f, 1f)));
         }
         return individual;
     }
@@ -72,16 +74,25 @@ public class GeneticAlgorithm : MonoBehaviour
     {
         if (currentGeneration >= generations) return;
 
-        if (currentStep < geneLength && !AllIndividualsDone())
+        if (currentStep < currentGeneLength || !AllIndividualsDone())
         {
+            // Debug.Log($"Current step: {currentStep}, currentGeneration: {currentGeneration}, currentGeneLength {currentGeneLength}");
             // Step active robots forward in parallel
             for (int i = 0; i < populationSize; i++)
             {
                 if (activeIndividuals[i])
                 {
-                    float motorTorque = population[i][currentStep].x * 400f;
-                    float steeringAngle = population[i][currentStep].y * 60f;
-                    robotInstances[i].ManualApplyControl(motorTorque, steeringAngle);
+                    if (currentStep < population[i].Count) // Ensure we don’t exceed individual gene length
+                    {
+                        float motorTorque = population[i][currentStep].x * 400f;
+                        float steeringAngle = population[i][currentStep].y * 60f;
+                        robotInstances[i].ManualApplyControl(motorTorque, steeringAngle);
+                    }
+                    else
+                    {
+                        // Car is still active but out of genes; extend its sequence
+                        ExtendIndividual(i);
+                    }
                 }
             }
             currentStep++;
@@ -91,14 +102,14 @@ public class GeneticAlgorithm : MonoBehaviour
             {
                 if (activeIndividuals[i])
                 {
-                    robotInstances[i].UpdateFitness();
+                    robotInstances[i].UpdateFitness(currentStep > 1000);
                 }
             }
         }
         else
         {
             // End of generation
-            Debug.Log($"Generation {currentGeneration} ended. Best Fitness: {GetBestFitness()}");
+            Debug.Log($"Generation {currentGeneration} ended. Best Fitness: {GetBestFitness()}, Gene Length: {currentGeneLength}");
             EvolvePopulation();
             ResetGeneration();
             currentGeneration++;
@@ -114,7 +125,7 @@ public class GeneticAlgorithm : MonoBehaviour
         if (isDone)
         {
             fitnessScores[individualIndex] = fitness;
-            activeIndividuals[individualIndex] = false; // Mark as inactive
+            activeIndividuals[individualIndex] = false;
         }
     }
 
@@ -127,8 +138,24 @@ public class GeneticAlgorithm : MonoBehaviour
         return true;
     }
 
+    private void ExtendIndividual(int index)
+    {
+        // Add a new random gene to this individual’s sequence
+        population[index].Add(new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
+        // Update currentGeneLength if this individual’s length exceeds it
+        currentGeneLength = Mathf.Max(currentGeneLength, population[index].Count);
+    }
+
     private void EvolvePopulation()
     {
+        // Find the maximum gene length in the current population
+        int maxGeneLength = currentGeneLength;
+        foreach (var individual in population)
+        {
+            maxGeneLength = Mathf.Max(maxGeneLength, individual.Count);
+        }
+        currentGeneLength = maxGeneLength; // Update to the maximum observed
+        Debug.Log($"Generation: Current genelenght: {currentGeneLength}");
         List<List<Vector2>> newPopulation = new List<List<Vector2>>();
         for (int i = 0; i < populationSize; i += 2)
         {
@@ -137,15 +164,28 @@ public class GeneticAlgorithm : MonoBehaviour
             Crossover(parent1, parent2, out var child1, out var child2);
             Mutate(child1);
             Mutate(child2);
+
+            // Ensure children match the maximum gene length
+            ExtendToLength(child1, currentGeneLength);
+            ExtendToLength(child2, currentGeneLength);
+
             newPopulation.Add(child1);
             newPopulation.Add(child2);
         }
         population = newPopulation;
 
         // Update individuals for each robot
-        for (int i = 0; i < populationSize; i++) 
+        for (int i = 0; i < populationSize; i++)
         {
             robotInstances[i].SetIndividual(population[i]);
+        }
+    }
+
+    private void ExtendToLength(List<Vector2> individual, int targetLength)
+    {
+        while (individual.Count < targetLength)
+        {
+            individual.Add(new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
         }
     }
 
@@ -158,9 +198,7 @@ public class GeneticAlgorithm : MonoBehaviour
             robotInstances[i].ManualReset();
         }
     }
-    
 
-    // Existing methods: Crossover, Mutate, SelectParent, GetBestFitness, SaveBestIndividual
     private void Crossover(List<Vector2> parent1, List<Vector2> parent2, out List<Vector2> child1, out List<Vector2> child2)
     {
         child1 = new List<Vector2>(parent1);
@@ -168,8 +206,9 @@ public class GeneticAlgorithm : MonoBehaviour
 
         if (Random.Range(0f, 1f) < crossoverRate)
         {
-            int point1 = Random.Range(1, geneLength - 2);
-            int point2 = Random.Range(point1, geneLength - 1);
+            int maxLength = Mathf.Min(parent1.Count, parent2.Count); // Use shorter length for crossover
+            int point1 = Random.Range(1, maxLength - 2);
+            int point2 = Random.Range(point1, maxLength - 1);
 
             for (int i = point1; i < point2; i++)
             {

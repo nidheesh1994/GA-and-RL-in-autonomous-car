@@ -54,7 +54,7 @@ public class RobotController : MonoBehaviour
     [Header("Movement Parameters")]
     public float maxMotorTorque = 400f;
     public float maxSteeringAngle = 60f;
-    private int currentStep = 0;
+    // private int currentStep = 0;
     private int sequenceLength = 500;
 
     private void Start()
@@ -84,15 +84,21 @@ public class RobotController : MonoBehaviour
         isActive = true;
     }
 
-    public void UpdateFitness()
+    public void UpdateFitness(bool checkSpeed)
     {
         if (!isActive) return;
+        // Debug.Log($"Acitve individual: {individualIndex}");
 
         float reward = HandleTrackRewards(currentMotorTorque, currentSteeringAngle);
         totalReward += reward;
 
+        float speed = Vector3.Dot(transform.forward, GetComponent<Rigidbody>().linearVelocity);
+
+        Debug.Log($"Speed: {speed}");
+
+
         // Check conditions to stop evaluation
-        if (IsOutOfTrack())
+        if (IsOutOfTrack() || (checkSpeed && speed <=1f))
         {
             ga.UpdateFitness(individualIndex, totalReward, true); // Assign fitness and mark as done
             isActive = false;
@@ -140,60 +146,6 @@ public class RobotController : MonoBehaviour
     //         totalReward = 0f;  // Reset accumulated reward
     //     }
     // }
-
-    public void OnEpisodeBegin()
-    {
-        // Reset the episode timer at the beginning of each episode
-        episodeTime = 0f;
-
-        Debug.Log("Episode begining");
-
-        // Stop the robot's velocity and angular velocity to prevent movement at the start
-        Rigidbody rb = GetComponent<Rigidbody>();
-        rb.linearVelocity = Vector3.zero;
-        rb.angularVelocity = Vector3.zero;
-
-        // Stop all wheels from rotating by setting motorTorque to zero
-        FLC.motorTorque = 0f;
-        FRC.motorTorque = 0f;
-        RLC.motorTorque = 0f;
-        RRC.motorTorque = 0f;
-
-        // Reset wheel steer angles to prevent unintended turning
-        FLC.steerAngle = 0f;
-        FRC.steerAngle = 0f;
-
-        // transform.localPosition = new Vector3(194.7755f, 0.6679955f, -153.1348f);
-        // Reset robot position and rotation as you have it in your current code
-
-        //first position
-        transform.localPosition = new Vector3(195.6539f, 0.6679955f, 192.1293f);
-        transform.rotation = Quaternion.Euler(0f, 180f, 0f);
-
-        // third position
-        // transform.localPosition = new Vector3(63.20256f, 14.68702f, -123.3367f);
-        // transform.rotation = Quaternion.Euler(10.608f, 359.733f, -1.223f);
-
-        //fifth position
-        // transform.localPosition = new Vector3(66.54259f, 16.45044f, -35.98968f);
-        // transform.rotation = Quaternion.Euler(-0.491f, 10.278f, -0.985f);
-
-        // fourth position
-        // transform.localPosition = new Vector3(23.57335f, 16.44876f, -23.40142f);
-        // transform.rotation = Quaternion.Euler(-0.08f, 187.596f, 0.571f);
-
-        // Set sensor orientations as defined
-        SetSensorOrientations();
-
-        // Debug.Log("Episode has started");
-    }
-
-    public void Heuristic(in ActionBuffers actionOut)
-    {
-        ActionSegment<float> continuousActions = actionOut.ContinuousActions;
-        continuousActions[0] = Input.GetAxisRaw("Vertical") * .5f;
-        continuousActions[1] = Input.GetAxisRaw("Horizontal") * 15;
-    }
 
     public float HandleTrackRewards(float motorTorque, float steeringAngle)
     {
