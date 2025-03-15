@@ -303,6 +303,22 @@ public class RobotController : MonoBehaviour
         return false;
     }
 
+    public bool isOnTurn()
+    {
+        Collider[] hitColliders = Physics.OverlapSphere(transform.position, 2f); // Adjust radius as necessary
+        foreach (var collider in hitColliders)
+        {
+            if (collider.gameObject.name.StartsWith("MT_Turn"))
+            {
+                // Debug.Log($"collider object: {collider.gameObject.name}");
+                return true; // The robot is on the road, not out of track
+            }
+        }
+
+        // If no road material is found, the robot is out of the track
+        return false;
+    }
+
 
     public bool IsOutOfTrack()
     {
@@ -324,7 +340,6 @@ public class RobotController : MonoBehaviour
                 // Debug.Log($"collider object: {collider.gameObject.name}");
                 return false; // The robot is on the road, not out of track
             }
-            ;
         }
 
         // If no road material is found, the robot is out of the track

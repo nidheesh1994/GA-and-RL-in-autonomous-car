@@ -91,7 +91,7 @@ public class GeneticAlgorithm : MonoBehaviour
                     else
                     {
                         // Car is still active but out of genes; extend its sequence
-                        ExtendIndividual(i);
+                        ExtendIndividual(i, robotInstances[i].isOnTurn());
                     }
                 }
             }
@@ -138,10 +138,10 @@ public class GeneticAlgorithm : MonoBehaviour
         return true;
     }
 
-    private void ExtendIndividual(int index)
+    private void ExtendIndividual(int index, bool isOnTurn)
     {
         // Add a new random gene to this individual’s sequence
-        population[index].Add(new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
+        population[index].Add(new Vector2(Random.Range(isOnTurn ? -1f : 0, 1f), Random.Range(-1f, 1f)));
         // Update currentGeneLength if this individual’s length exceeds it
         currentGeneLength = Mathf.Max(currentGeneLength, population[index].Count);
     }
