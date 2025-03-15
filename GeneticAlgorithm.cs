@@ -1,26 +1,28 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using System.IO;
 
 public class GeneticAlgorithm : MonoBehaviour
 {
     public int populationSize = 50;
-    public int geneLength = 2000;
+    public int geneLength = 10000;
     public float mutationRate = 0.01f;
     public float crossoverRate = 0.7f;
     public int generations = 100;
+    
+    [SerializeField] private GameObject robotPrefab;
 
-    public List<List<Vector2>> population;
+    private List<List<Vector2>> population;
     private List<float> fitnessScores;
+    private List<RobotController> robotInstances;
+    private List<bool> activeIndividuals; // Tracks which robots are still active
+    private int currentStep = 0;
+    private int currentGeneration = 0;
 
-    private RobotController robotController;
 
     private void Start()
     {
-        robotController = FindObjectOfType<RobotController>();
         InitializePopulation();
-        StartCoroutine(RunGA());
+        InitializeRobots();
     }
 
     private void InitializePopulation()
@@ -31,6 +33,11 @@ public class GeneticAlgorithm : MonoBehaviour
             population.Add(CreateIndividual());
         }
         fitnessScores = new List<float>(new float[populationSize]);
+        activeIndividuals = new List<bool>(new bool[populationSize]);
+        for (int i = 0; i < populationSize; i++)
+        {
+            activeIndividuals[i] = true; // All start active
+        }
     }
 
     private List<Vector2> CreateIndividual()
@@ -43,98 +50,117 @@ public class GeneticAlgorithm : MonoBehaviour
         return individual;
     }
 
-    public void UpdateFitness(float fitness)
+    private void InitializeRobots()
     {
-        int currentIndividual = fitnessScores.Count - population.Count;
-        if (currentIndividual >= 0 && currentIndividual < fitnessScores.Count)
-        {
-            fitnessScores[currentIndividual] = fitness;
-        }
-    }
-
-    private IEnumerator RunGA()
-    {
-        for (int generation = 0; generation < generations; generation++)
-        {
-            Debug.Log($"Generation {generation}: starting");
-
-            // Evaluate fitness for each individual in the population
-            yield return StartCoroutine(EvaluatePopulation());
-
-            Debug.Log($"Generation {generation}: ended Best Fitness = {GetBestFitness()}");
-
-            EvolvePopulation();
-
-            yield return null;  // Allow Unity to update frames before next generation
-        }
-
-        SaveBestIndividual();
-    }
-
-    // 🔥🔥 Evaluate Fitness for Each Individual 🔥🔥
-    private IEnumerator EvaluatePopulation()
-    {
+        robotInstances = new List<RobotController>();
         for (int i = 0; i < populationSize; i++)
         {
-            float fitness = 0f;
-
-            // Run each individual's control sequence and get fitness score
-            yield return StartCoroutine(RunIndividual(population[i], result => fitness = result));
-
-            Debug.Log($"Fitness score of pupulation {i}: {fitness}");
-
-            fitnessScores[i] = fitness;  // Store the fitness score
+            GameObject robotObj = Instantiate(robotPrefab, GetSpawnPosition(i), Quaternion.Euler(0f, 180f, 0f));
+            robotObj.layer = LayerMask.NameToLayer("Robot");
+            RobotController robot = robotObj.GetComponent<RobotController>();
+            robot.InitializeForGA(this, i);
+            robotInstances.Add(robot);
         }
     }
 
-    // 🔥🔥 Run Each Individual's Control Sequence 🔥🔥
-    private IEnumerator RunIndividual(List<Vector2> individual, System.Action<float> callback)
+    private Vector3 GetSpawnPosition(int index)
     {
-        float totalReward = 0f;
-        robotController.ManualReset();  // Reset the car for each individual
+        return new Vector3(195.6539f + index * 2f, 0.6679955f, 192.1293f);
+    }
 
-        for (int t = 0; t < geneLength; t++)
+    private void FixedUpdate()
+    {
+        if (currentGeneration >= generations) return;
+
+        if (currentStep < geneLength && !AllIndividualsDone())
         {
-            float motorTorque = individual[t].x * 400f;
-            float steeringAngle = individual[t].y * 60f;
-
-            robotController.ManualApplyControl(motorTorque, steeringAngle);
-
-            Debug.Log($"Motor Torque: {motorTorque}, Steering Angle: {steeringAngle}, currentStep: {t}");
-
-            // Get reward as fitness score
-            float reward = robotController.HandleTrackRewards(motorTorque, steeringAngle);
-            totalReward += reward;
-
-            if (robotController.IsOutOfTrack() || robotController.HandleFinalCheckpoint())
+            // Step active robots forward in parallel
+            for (int i = 0; i < populationSize; i++)
             {
-                break;  // End the simulation if out of track or finished
+                if (activeIndividuals[i])
+                {
+                    float motorTorque = population[i][currentStep].x * 400f;
+                    float steeringAngle = population[i][currentStep].y * 60f;
+                    robotInstances[i].ManualApplyControl(motorTorque, steeringAngle);
+                }
             }
+            currentStep++;
 
-            yield return new WaitForFixedUpdate();  // Wait for next physics frame
+            // Update fitness and check completion
+            for (int i = 0; i < populationSize; i++)
+            {
+                if (activeIndividuals[i])
+                {
+                    robotInstances[i].UpdateFitness();
+                }
+            }
         }
+        else
+        {
+            // End of generation
+            Debug.Log($"Generation {currentGeneration} ended. Best Fitness: {GetBestFitness()}");
+            EvolvePopulation();
+            ResetGeneration();
+            currentGeneration++;
+            if (currentGeneration == generations)
+            {
+                SaveBestIndividual();
+            }
+        }
+    }
 
-        callback(totalReward);  // Return fitness score via callback
+    public void UpdateFitness(int individualIndex, float fitness, bool isDone)
+    {
+        if (isDone)
+        {
+            fitnessScores[individualIndex] = fitness;
+            activeIndividuals[individualIndex] = false; // Mark as inactive
+        }
+    }
+
+    private bool AllIndividualsDone()
+    {
+        foreach (bool active in activeIndividuals)
+        {
+            if (active) return false;
+        }
+        return true;
     }
 
     private void EvolvePopulation()
     {
-         Debug.Log($"Evolving");
         List<List<Vector2>> newPopulation = new List<List<Vector2>>();
         for (int i = 0; i < populationSize; i += 2)
         {
             var parent1 = SelectParent();
             var parent2 = SelectParent();
-            Crossover(parent1, parent2, out var child1, out var child2);  // Crossover function defined below
+            Crossover(parent1, parent2, out var child1, out var child2);
             Mutate(child1);
             Mutate(child2);
             newPopulation.Add(child1);
             newPopulation.Add(child2);
         }
         population = newPopulation;
+
+        // Update individuals for each robot
+        for (int i = 0; i < populationSize; i++) 
+        {
+            robotInstances[i].SetIndividual(population[i]);
+        }
     }
 
-    // 🔥🔥 Define the Crossover Function 🔥🔥
+    private void ResetGeneration()
+    {
+        currentStep = 0;
+        for (int i = 0; i < populationSize; i++)
+        {
+            activeIndividuals[i] = true;
+            robotInstances[i].ManualReset();
+        }
+    }
+    
+
+    // Existing methods: Crossover, Mutate, SelectParent, GetBestFitness, SaveBestIndividual
     private void Crossover(List<Vector2> parent1, List<Vector2> parent2, out List<Vector2> child1, out List<Vector2> child2)
     {
         child1 = new List<Vector2>(parent1);
@@ -176,7 +202,7 @@ public class GeneticAlgorithm : MonoBehaviour
 
     private float GetBestFitness()
     {
-        float bestFitness = 0f;
+        float bestFitness = float.MinValue;
         foreach (float fitness in fitnessScores)
         {
             if (fitness > bestFitness)
@@ -190,7 +216,7 @@ public class GeneticAlgorithm : MonoBehaviour
     private void SaveBestIndividual()
     {
         string path = Application.dataPath + "/GA_TrainingData.csv";
-        using (StreamWriter writer = new StreamWriter(path))
+        using (System.IO.StreamWriter writer = new System.IO.StreamWriter(path))
         {
             writer.WriteLine("MotorTorque,SteeringAngle");
             foreach (Vector2 gene in population[0])

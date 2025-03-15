@@ -44,7 +44,7 @@ public class RobotController : MonoBehaviour
     public float steeringSmoothing = 5f;
     public float accelerationSmoothing = 2f;
 
-    private float currentSteerAngle = 0f;
+    private float currentSteeringAngle = 0f;
     private float currentMotorTorque = 0f;
 
     private float episodeTime = 0f; // Track the elapsed time since the episode started
@@ -54,14 +54,57 @@ public class RobotController : MonoBehaviour
     [Header("Movement Parameters")]
     public float maxMotorTorque = 400f;
     public float maxSteeringAngle = 60f;
-    private GeneticAlgorithm ga;
     private int currentStep = 0;
     private int sequenceLength = 500;
-    private float totalReward = 0f;  // To accumulate fitness score
 
     private void Start()
     {
         ga = FindObjectOfType<GeneticAlgorithm>();
+    }
+
+    private GeneticAlgorithm ga;
+    private int individualIndex;
+    private float totalReward;
+    private List<Vector2> currentIndividual;
+    private bool isActive;
+
+    public void InitializeForGA(GeneticAlgorithm geneticAlgorithm, int index)
+    {
+        ga = geneticAlgorithm;
+        individualIndex = index;
+        totalReward = 0f;
+        isActive = true;
+        ManualReset();
+    }
+
+    public void SetIndividual(List<Vector2> individual)
+    {
+        currentIndividual = individual;
+        totalReward = 0f;
+        isActive = true;
+    }
+
+    public void UpdateFitness()
+    {
+        if (!isActive) return;
+
+        float reward = HandleTrackRewards(currentMotorTorque, currentSteeringAngle);
+        totalReward += reward;
+
+        // Check conditions to stop evaluation
+        if (IsOutOfTrack())
+        {
+            ga.UpdateFitness(individualIndex, totalReward, true); // Assign fitness and mark as done
+            isActive = false;
+            // Optionally disable rendering or physics for this robot to save resources
+            GetComponent<Rigidbody>().isKinematic = true; // Stop physics updates
+        }
+        else if (HandleFinalCheckpoint())
+        {
+            ga.UpdateFitness(individualIndex, totalReward, true); // Assign fitness and mark as done
+            isActive = false;
+            GetComponent<Rigidbody>().isKinematic = true;
+        }
     }
 
 
@@ -195,19 +238,21 @@ public class RobotController : MonoBehaviour
 
     // Method to reset the car without triggering ML-Agents logic
     public void ManualReset()
-    {
-        // Reset position, rotation, and physics
-        transform.localPosition = new Vector3(195.6539f, 0.6679955f, 192.1293f);
-        transform.rotation = Quaternion.Euler(0f, 180f, 0f);
-        Rigidbody rb = GetComponent<Rigidbody>();
-        rb.linearVelocity = Vector3.zero;
-        rb.angularVelocity = Vector3.zero;
-        SetSensorOrientations();
-    }
-
+{
+    transform.localPosition = new Vector3(195.6539f, 0.6679955f, 192.1293f);
+    transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+    Rigidbody rb = GetComponent<Rigidbody>();
+    rb.isKinematic = false; // Ensure the Rigidbody is non-kinematic before setting velocity
+    rb.linearVelocity = Vector3.zero;
+    rb.angularVelocity = Vector3.zero;
+    currentMotorTorque = 0f;
+    currentSteeringAngle = 0f;
+    SetSensorOrientations();
+}
     // Method to directly apply torque/steering (bypass ML-Agents actions)
     public void ManualApplyControl(float torque, float steering)
     {
+        
         ApplySteering(steering);
         ApplyMotorTorque(torque);
         UpdateWheelTransforms();
@@ -467,18 +512,18 @@ public class RobotController : MonoBehaviour
         RaycastHit hit;
         if (Physics.Raycast(sensor.position, sensor.forward, out hit, sensorRange))
         {
-            Debug.DrawLine(sensor.position, hit.point, Color.red);
+            // Debug.DrawLine(sensor.position, hit.point, Color.red);
             return (hit.distance, hit.collider.gameObject.name);
         }
-        Debug.DrawLine(sensor.position, sensor.position + sensor.forward * sensorRange, Color.green);
+        // Debug.DrawLine(sensor.position, sensor.position + sensor.forward * sensorRange, Color.green);
         return (sensorRange, "None");
     }
 
     public void ApplySteering(float targetAngle)
     {
-        currentSteerAngle = Mathf.Lerp(currentSteerAngle, targetAngle, Time.deltaTime * steeringSmoothing);
-        FLC.steerAngle = currentSteerAngle;
-        FRC.steerAngle = currentSteerAngle;
+        currentSteeringAngle = Mathf.Lerp(currentSteeringAngle, targetAngle, Time.deltaTime * steeringSmoothing);
+        FLC.steerAngle = currentSteeringAngle;
+        FRC.steerAngle = currentSteeringAngle;
     }
 
     public void ApplyMotorTorque(float targetTorque)
