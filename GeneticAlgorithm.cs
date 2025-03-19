@@ -281,39 +281,55 @@ public class GeneticAlgorithm : MonoBehaviour
     }
 
     private void EvolvePopulation()
+{
+    // 🔥 Step 1: Sort Population by Fitness (Descending Order)
+    List<int> sortedIndices = new List<int>();
+    for (int i = 0; i < populationSize; i++) sortedIndices.Add(i);
+
+    sortedIndices.Sort((a, b) => fitnessScores[b].CompareTo(fitnessScores[a])); // Sort by highest fitness
+
+    List<List<Vector2>> newPopulation = new List<List<Vector2>>();
+
+    // 🔥 Step 2: Select the top 50% of the population
+    int eliteSize = populationSize / 2;
+    List<List<Vector2>> eliteIndividuals = new List<List<Vector2>>();
+    for (int i = 0; i < eliteSize; i++)
     {
-        // Find the maximum gene length in the current population
-        int maxGeneLength = currentGeneLength;
-        foreach (var individual in population)
-        {
-            maxGeneLength = Mathf.Max(maxGeneLength, individual.Count);
-        }
-        currentGeneLength = maxGeneLength; // Update to the maximum observed
-        Debug.Log($"Generation: Current genelenght: {currentGeneLength}");
-        List<List<Vector2>> newPopulation = new List<List<Vector2>>();
-        for (int i = 0; i < populationSize; i += 2)
-        {
-            var parent1 = SelectParent();
-            var parent2 = SelectParent();
-            Crossover(parent1, parent2, out var child1, out var child2);
-            Mutate(child1);
-            Mutate(child2);
-
-            // Ensure children match the maximum gene length
-            ExtendToLength(child1, currentGeneLength);
-            ExtendToLength(child2, currentGeneLength);
-
-            newPopulation.Add(child1);
-            newPopulation.Add(child2);
-        }
-        population = newPopulation;
-
-        // Update individuals for each robot
-        for (int i = 0; i < populationSize; i++)
-        {
-            robotInstances[i].SetIndividual(population[i]);
-        }
+        eliteIndividuals.Add(population[sortedIndices[i]]);
     }
+
+    // 🔥 Step 3: Generate the Next Generation
+    for (int i = 0; i < populationSize; i += 2)
+    {
+        // Select parents from the elite pool
+        var parent1 = eliteIndividuals[Random.Range(0, eliteSize)];
+        var parent2 = eliteIndividuals[Random.Range(0, eliteSize)];
+
+        // Perform crossover
+        Crossover(parent1, parent2, out var child1, out var child2);
+
+        // Apply mutation
+        Mutate(child1);
+        Mutate(child2);
+
+        // Ensure children match the maximum gene length
+        ExtendToLength(child1, currentGeneLength);
+        ExtendToLength(child2, currentGeneLength);
+
+        newPopulation.Add(child1);
+        newPopulation.Add(child2);
+    }
+
+    // 🔥 Step 4: Update the population with the new generation
+    population = newPopulation;
+
+    // 🔥 Step 5: Assign new individuals to robots
+    for (int i = 0; i < populationSize; i++)
+    {
+        robotInstances[i].SetIndividual(population[i]);
+    }
+}
+
 
     private void ExtendToLength(List<Vector2> individual, int targetLength)
     {
