@@ -98,7 +98,7 @@ public class RobotController : MonoBehaviour
 
 
         // Check conditions to stop evaluation
-        if (IsOutOfTrack() || (checkSpeed && speed <=1f))
+        if (IsOutOfTrack() || (checkSpeed && speed <= 1f))
         {
             ga.UpdateFitness(individualIndex, totalReward, true); // Assign fitness and mark as done
             isActive = false;
@@ -154,7 +154,7 @@ public class RobotController : MonoBehaviour
 
         if (speed > 0f)
         {
-            reward += speed > 1.5f ? (speed < 5.5f ? 0.1f : -0.1f) : -0.1f;
+            reward += speed > 1.5f ? (speed < 10f ? 0.1f : -0.1f) : -0.1f;
         }
         else
         {
@@ -190,21 +190,21 @@ public class RobotController : MonoBehaviour
 
     // Method to reset the car without triggering ML-Agents logic
     public void ManualReset()
-{
-    transform.localPosition = new Vector3(195.6539f, 0.6679955f, 192.1293f);
-    transform.rotation = Quaternion.Euler(0f, 180f, 0f);
-    Rigidbody rb = GetComponent<Rigidbody>();
-    rb.isKinematic = false; // Ensure the Rigidbody is non-kinematic before setting velocity
-    rb.linearVelocity = Vector3.zero;
-    rb.angularVelocity = Vector3.zero;
-    currentMotorTorque = 0f;
-    currentSteeringAngle = 0f;
-    SetSensorOrientations();
-}
+    {
+        transform.localPosition = new Vector3(195.6539f, 0.6679955f, 192.1293f);
+        transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+        Rigidbody rb = GetComponent<Rigidbody>();
+        rb.isKinematic = false; // Ensure the Rigidbody is non-kinematic before setting velocity
+        rb.linearVelocity = Vector3.zero;
+        rb.angularVelocity = Vector3.zero;
+        currentMotorTorque = 0f;
+        currentSteeringAngle = 0f;
+        SetSensorOrientations();
+    }
     // Method to directly apply torque/steering (bypass ML-Agents actions)
     public void ManualApplyControl(float torque, float steering)
     {
-        
+
         ApplySteering(steering);
         ApplyMotorTorque(torque);
         UpdateWheelTransforms();

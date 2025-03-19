@@ -1,13 +1,15 @@
 using System.Collections.Generic;
 using UnityEngine;
-
+using System.IO;
+using SimpleJSON;
 public class GeneticAlgorithm : MonoBehaviour
 {
     public int populationSize = 50;
     public int initialGeneLength = 100; // Starting gene length
     public float mutationRate = 0.01f;
     public float crossoverRate = 0.7f;
-    public int generations = 100;
+    public int generations = 10000;
+
 
     [SerializeField] private GameObject robotPrefab;
 
@@ -19,17 +21,143 @@ public class GeneticAlgorithm : MonoBehaviour
     private int currentGeneration = 0;
     private int currentGeneLength; // Tracks the current maximum gene length
 
+    private string saveFilePath;
+
     private void Start()
     {
         QualitySettings.SetQualityLevel(0, true);
         currentGeneLength = initialGeneLength; // Initialize to starting value
-        InitializePopulation();
+        saveFilePath = Application.persistentDataPath + "/GA_PopulationData.json";
+        population = new List<List<Vector2>>();
+
+        if (LoadPopulationFromFile())
+        {
+            Debug.Log("✅ Loaded saved population successfully!");
+        }
+        else
+        {
+            InitializePopulation();
+        }
+
         InitializeRobots();
     }
 
+    private void OnApplicationQuit()
+    {
+        SavePopulationToFile();
+    }
+
+    private void SavePopulationToFile()
+    {
+        Debug.Log("💾 Saving population data...");
+
+        // Start JSON structure
+        string json = "{\n";
+        json += $"    \"currentGeneration\": {currentGeneration},\n";
+        json += $"    \"currentGeneLength\": {currentGeneLength},\n";
+        json += "    \"serializedPopulation\": [\n";
+
+        // Loop through each individual
+        for (int i = 0; i < population.Count; i++)
+        {
+            json += "        [\n";
+
+            // Loop through each gene (Vector2)
+            for (int j = 0; j < population[i].Count; j++)
+            {
+                Vector2 gene = population[i][j];
+                json += $"            [{gene.x}, {gene.y}]";
+
+                // Add comma unless it's the last element
+                if (j < population[i].Count - 1) json += ",";
+                json += "\n";
+            }
+
+            json += "        ]";
+
+            // Add comma unless it's the last individual
+            if (i < population.Count - 1) json += ",";
+            json += "\n";
+        }
+
+        json += "    ]\n}";
+
+        // Write to file
+        File.WriteAllText(saveFilePath, json);
+        Debug.Log("✅ Population successfully saved to: " + saveFilePath);
+    }
+
+
+
+
+
+    private bool LoadPopulationFromFile()
+    {
+        if (File.Exists(saveFilePath))
+        {
+            Debug.Log("📂 Loading population data from file...");
+
+            string json = File.ReadAllText(saveFilePath);
+            JSONNode jsonObject = JSON.Parse(json);  // ✅ Fix: Use `JSONNode`
+
+            if (jsonObject == null)
+            {
+                Debug.LogError("❌ Failed to parse JSON file. The file may be corrupted.");
+                return false;
+            }
+
+            currentGeneration = jsonObject["currentGeneration"].AsInt;
+            currentGeneLength = jsonObject["currentGeneLength"].AsInt;
+
+            population = new List<List<Vector2>>();
+
+            JSONNode serializedPopulation = jsonObject["serializedPopulation"];
+
+            if (serializedPopulation == null || serializedPopulation.Count == 0)
+            {
+                Debug.LogError("❌ Error: Population file exists but is empty.");
+                return false;
+            }
+
+            foreach (JSONArray individual in serializedPopulation.AsArray)
+            {
+                List<Vector2> newIndividual = new List<Vector2>();
+
+                foreach (JSONArray gene in individual.AsArray)
+                {
+                    if (gene.Count < 2) continue; // 🔥 Fix: Ensure gene has 2 values before accessing
+                    float x = gene[0].AsFloat;
+                    float y = gene[1].AsFloat;
+                    newIndividual.Add(new Vector2(x, y));
+                }
+
+                population.Add(newIndividual);
+            }
+
+            fitnessScores = new List<float>(new float[populationSize]);
+        activeIndividuals = new List<bool>(new bool[populationSize]);
+        for (int i = 0; i < populationSize; i++)
+        {
+            activeIndividuals[i] = true;
+        }
+
+            Debug.Log($"✅ Population successfully loaded. Population Size: {population.Count}");
+            return true;
+        }
+        else
+        {
+            Debug.LogWarning("⚠ No saved population file found. Starting new.");
+            return false;
+        }
+    }
+
+
+
+
+
+
     private void InitializePopulation()
     {
-        population = new List<List<Vector2>>();
         for (int i = 0; i < populationSize; i++)
         {
             population.Add(CreateIndividual(currentGeneLength));
@@ -47,7 +175,7 @@ public class GeneticAlgorithm : MonoBehaviour
         List<Vector2> individual = new List<Vector2>();
         for (int j = 0; j < length; j++)
         {
-            individual.Add(new Vector2(Random.Range(0f, 1f), Random.Range(-1f, 1f)));
+            individual.Add(new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
         }
         return individual;
     }
@@ -72,6 +200,12 @@ public class GeneticAlgorithm : MonoBehaviour
 
     private void FixedUpdate()
     {
+        if (population == null || population.Count == 0)
+        {
+            Debug.LogWarning("⚠ Population is not initialized. Skipping FixedUpdate.");
+            return;
+        }
+
         if (currentGeneration >= generations) return;
 
         if (currentStep < currentGeneLength || !AllIndividualsDone())
@@ -141,7 +275,7 @@ public class GeneticAlgorithm : MonoBehaviour
     private void ExtendIndividual(int index, bool isOnTurn)
     {
         // Add a new random gene to this individual’s sequence
-        population[index].Add(new Vector2(Random.Range(isOnTurn ? -1f : 0, 1f), Random.Range(-1f, 1f)));
+        population[index].Add(new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
         // Update currentGeneLength if this individual’s length exceeds it
         currentGeneLength = Mathf.Max(currentGeneLength, population[index].Count);
     }
