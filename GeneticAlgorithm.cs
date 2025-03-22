@@ -2,17 +2,19 @@ using System.Collections.Generic;
 using UnityEngine;
 using System.IO;
 using SimpleJSON;
+
 public class GeneticAlgorithm : MonoBehaviour
 {
+    // Configuration Parameters
     public int populationSize = 50;
     public int initialGeneLength = 100; // Starting gene length
     public float mutationRate = 0.01f;
     public float crossoverRate = 0.7f;
     public int generations = 10000;
 
-
     [SerializeField] private GameObject robotPrefab;
 
+    // Runtime Data
     private List<List<Vector2>> population;
     private List<float> fitnessScores;
     private List<RobotController> robotInstances;
@@ -20,13 +22,13 @@ public class GeneticAlgorithm : MonoBehaviour
     private int currentStep = 0;
     private int currentGeneration = 0;
     private int currentGeneLength; // Tracks the current maximum gene length
-
     private string saveFilePath;
 
+    // Initialization
     private void Start()
     {
-        QualitySettings.SetQualityLevel(0, true);
-        currentGeneLength = initialGeneLength; // Initialize to starting value
+        QualitySettings.SetQualityLevel(0, true); // Optimize by setting lowest quality
+        currentGeneLength = initialGeneLength;
         saveFilePath = Application.persistentDataPath + "/GA_PopulationData.json";
         population = new List<List<Vector2>>();
 
@@ -42,95 +44,77 @@ public class GeneticAlgorithm : MonoBehaviour
         InitializeRobots();
     }
 
+    // Cleanup
     private void OnApplicationQuit()
     {
         SavePopulationToFile();
     }
 
+    // Save Population to File
     private void SavePopulationToFile()
     {
         Debug.Log("💾 Saving population data...");
+        string json = "{\n" +
+                      $"    \"currentGeneration\": {currentGeneration},\n" +
+                      $"    \"currentGeneLength\": {currentGeneLength},\n" +
+                      "    \"serializedPopulation\": [\n";
 
-        // Start JSON structure
-        string json = "{\n";
-        json += $"    \"currentGeneration\": {currentGeneration},\n";
-        json += $"    \"currentGeneLength\": {currentGeneLength},\n";
-        json += "    \"serializedPopulation\": [\n";
-
-        // Loop through each individual
         for (int i = 0; i < population.Count; i++)
         {
             json += "        [\n";
-
-            // Loop through each gene (Vector2)
             for (int j = 0; j < population[i].Count; j++)
             {
                 Vector2 gene = population[i][j];
                 json += $"            [{gene.x}, {gene.y}]";
-
-                // Add comma unless it's the last element
                 if (j < population[i].Count - 1) json += ",";
                 json += "\n";
             }
-
             json += "        ]";
-
-            // Add comma unless it's the last individual
             if (i < population.Count - 1) json += ",";
             json += "\n";
         }
-
         json += "    ]\n}";
 
-        // Write to file
         File.WriteAllText(saveFilePath, json);
         Debug.Log("✅ Population successfully saved to: " + saveFilePath);
     }
 
-
-
-
-
+    // Load Population from File
     private bool LoadPopulationFromFile()
     {
         if (File.Exists(saveFilePath))
         {
             Debug.Log("📂 Loading population data from file...");
-
             string json = File.ReadAllText(saveFilePath);
-            JSONNode jsonObject = JSON.Parse(json);  // ✅ Fix: Use `JSONNode`
+            JSONNode jsonObject = JSON.Parse(json);
 
             if (jsonObject == null)
             {
-                Debug.LogError("❌ Failed to parse JSON file. The file may be corrupted.");
+                Debug.LogError("❌ Failed to parse JSON file.");
                 return false;
             }
 
             currentGeneration = jsonObject["currentGeneration"].AsInt;
             currentGeneLength = jsonObject["currentGeneLength"].AsInt;
-
             population = new List<List<Vector2>>();
-
             JSONNode serializedPopulation = jsonObject["serializedPopulation"];
 
             if (serializedPopulation == null || serializedPopulation.Count == 0)
             {
-                Debug.LogError("❌ Error: Population file exists but is empty.");
+                Debug.LogError("❌ Population file is empty.");
                 return false;
             }
 
             foreach (JSONArray individual in serializedPopulation.AsArray)
             {
                 List<Vector2> newIndividual = new List<Vector2>();
-
                 foreach (JSONArray gene in individual.AsArray)
                 {
-                    if (gene.Count < 2) continue; // 🔥 Fix: Ensure gene has 2 values before accessing
+                    if (gene.Count < 2) continue;
                     float x = gene[0].AsFloat;
                     float y = gene[1].AsFloat;
                     newIndividual.Add(new Vector2(x, y));
                 }
-
                 population.Add(newIndividual);
             }
 
@@ -140,22 +124,14 @@ public class GeneticAlgorithm : MonoBehaviour
             {
                 activeIndividuals[i] = true;
             }
-
-            Debug.Log($"✅ Population successfully loaded. Population Size: {population.Count}");
+            Debug.Log($"✅ Population loaded. Size: {population.Count}");
             return true;
         }
-        else
-        {
-            Debug.LogWarning("⚠ No saved population file found. Starting new.");
-            return false;
-        }
+        Debug.LogWarning("⚠ No saved population found. Starting new.");
+        return false;
     }
 
-
-
-
-
-
+    // Initialize New Population
     private void InitializePopulation()
     {
         for (int i = 0; i < populationSize; i++)
@@ -170,6 +146,7 @@ public class GeneticAlgorithm : MonoBehaviour
         }
     }
 
+    // Create a Random Individual
     private List<Vector2> CreateIndividual(int length)
     {
         List<Vector2> individual = new List<Vector2>();
@@ -180,6 +157,7 @@ public class GeneticAlgorithm : MonoBehaviour
         return individual;
     }
 
+    // Instantiate Robots
     private void InitializeRobots()
     {
         robotInstances = new List<RobotController>();
@@ -190,19 +168,32 @@ public class GeneticAlgorithm : MonoBehaviour
             RobotController robot = robotObj.GetComponent<RobotController>();
             robot.InitializeForGA(this, i);
             robotInstances.Add(robot);
+
+            // Optimize rendering: disable for all but the first robot
+            if (i > 0)
+            {
+                Renderer[] renderers = robotObj.GetComponentsInChildren<Renderer>();
+                foreach (Renderer renderer in renderers)
+                {
+                    renderer.enabled = false;
+                }
+                robot.shouldRender = false;
+            }
         }
     }
 
+    // Define Spawn Position
     private Vector3 GetSpawnPosition(int index)
     {
         return new Vector3(195.6539f + index * 2f, 0.6679955f, 192.1293f);
     }
 
+    // Main Simulation Loop
     private void FixedUpdate()
     {
         if (population == null || population.Count == 0)
         {
-            Debug.LogWarning("⚠ Population is not initialized. Skipping FixedUpdate.");
+            Debug.LogWarning("⚠ Population not initialized.");
             return;
         }
 
@@ -210,28 +201,21 @@ public class GeneticAlgorithm : MonoBehaviour
 
         if (currentStep < currentGeneLength || !AllIndividualsDone())
         {
-            // Debug.Log($"Current step: {currentStep}, currentGeneration: {currentGeneration}, currentGeneLength {currentGeneLength}");
-            // Step active robots forward in parallel
             for (int i = 0; i < populationSize; i++)
             {
-                if (activeIndividuals[i])
+                if (activeIndividuals[i] && currentStep < population[i].Count)
                 {
-                    if (currentStep < population[i].Count) // Ensure we don’t exceed individual gene length
-                    {
-                        float motorTorque = population[i][currentStep].x * 400f;
-                        float steeringAngle = population[i][currentStep].y * 60f;
-                        robotInstances[i].ManualApplyControl(motorTorque, steeringAngle);
-                    }
-                    else
-                    {
-                        // Car is still active but out of genes; extend its sequence
-                        ExtendIndividual(i, robotInstances[i].isOnTurn());
-                    }
+                    float motorTorque = population[i][currentStep].x * 400f;
+                    float steeringAngle = population[i][currentStep].y * 60f;
+                    robotInstances[i].ManualApplyControl(motorTorque, steeringAngle);
+                }
+                else if (activeIndividuals[i])
+                {
+                    ExtendIndividual(i, robotInstances[i].isOnTurn());
                 }
             }
             currentStep++;
 
-            // Update fitness and check completion
             for (int i = 0; i < populationSize; i++)
             {
                 if (activeIndividuals[i])
@@ -242,7 +226,6 @@ public class GeneticAlgorithm : MonoBehaviour
         }
         else
         {
-            // End of generation
             Debug.Log($"Generation {currentGeneration} ended. Best Fitness: {GetBestFitness()}, Gene Length: {currentGeneLength}");
             EvolvePopulation();
             ResetGeneration();
@@ -254,6 +237,7 @@ public class GeneticAlgorithm : MonoBehaviour
         }
     }
 
+    // Update Individual Fitness
     public void UpdateFitness(int individualIndex, float fitness, bool isDone)
     {
         if (isDone)
@@ -263,55 +247,27 @@ public class GeneticAlgorithm : MonoBehaviour
         }
     }
 
+    // Check if All Individuals Are Done
     private bool AllIndividualsDone()
     {
-        foreach (bool active in activeIndividuals)
-        {
-            if (active) return false;
-        }
-        return true;
+        return !activeIndividuals.Contains(true);
     }
 
+    // Extend an Individual’s Gene Sequence
     private void ExtendIndividual(int index, bool isOnTurn)
     {
-        if (Random.value < 0.1f) // 10% chance for a fully random gene
-        {
-            population[index].Add(new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
-        }
-        else
-        {
-            Vector2 lastGene = population[index][population[index].Count - 1];
-            float newTorque = lastGene.x + Random.Range(-0.1f, 0.1f);
-            float newSteering = lastGene.y + Random.Range(-0.1f, 0.1f);
-
-            // Bias torque and steering on turns
-            if (isOnTurn)
-            {
-                newTorque = Mathf.Clamp(newTorque, -1f, 1f); // Allow braking/reversing
-                newSteering = Mathf.Clamp(newSteering + Random.Range(-0.2f, 0.2f), -1f, 1f); // Larger steering variance
-            }
-            else
-            {
-                newTorque = Mathf.Clamp(newTorque, 0f, 1f); // Forward movement only
-                newSteering = Mathf.Clamp(newSteering, -1f, 1f);
-            }
-
-            population[index].Add(new Vector2(newTorque, newSteering));
-        }
+        population[index].Add(new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
         currentGeneLength = Mathf.Max(currentGeneLength, population[index].Count);
     }
 
+    // Evolve the Population
     private void EvolvePopulation()
     {
-        // 🔥 Step 1: Sort Population by Fitness (Descending Order)
         List<int> sortedIndices = new List<int>();
         for (int i = 0; i < populationSize; i++) sortedIndices.Add(i);
-
-        sortedIndices.Sort((a, b) => fitnessScores[b].CompareTo(fitnessScores[a])); // Sort by highest fitness
+        sortedIndices.Sort((a, b) => fitnessScores[b].CompareTo(fitnessScores[a]));
 
         List<List<Vector2>> newPopulation = new List<List<Vector2>>();
-
-        // 🔥 Step 2: Select the top 50% of the population
         int eliteSize = populationSize / 2;
         List<List<Vector2>> eliteIndividuals = new List<List<Vector2>>();
         for (int i = 0; i < eliteSize; i++)
@@ -319,39 +275,27 @@ public class GeneticAlgorithm : MonoBehaviour
             eliteIndividuals.Add(population[sortedIndices[i]]);
         }
 
-        // 🔥 Step 3: Generate the Next Generation
         for (int i = 0; i < populationSize; i += 2)
         {
-            // Select parents from the elite pool
             var parent1 = eliteIndividuals[Random.Range(0, eliteSize)];
             var parent2 = eliteIndividuals[Random.Range(0, eliteSize)];
-
-            // Perform crossover
             Crossover(parent1, parent2, out var child1, out var child2);
-
-            // Apply mutation
             Mutate(child1);
             Mutate(child2);
-
-            // Ensure children match the maximum gene length
             ExtendToLength(child1, currentGeneLength);
             ExtendToLength(child2, currentGeneLength);
-
             newPopulation.Add(child1);
             newPopulation.Add(child2);
         }
 
-        // 🔥 Step 4: Update the population with the new generation
         population = newPopulation;
-
-        // 🔥 Step 5: Assign new individuals to robots
         for (int i = 0; i < populationSize; i++)
         {
             robotInstances[i].SetIndividual(population[i]);
         }
     }
 
-
+    // Extend Individual to Target Length
     private void ExtendToLength(List<Vector2> individual, int targetLength)
     {
         while (individual.Count < targetLength)
@@ -360,6 +304,7 @@ public class GeneticAlgorithm : MonoBehaviour
         }
     }
 
+    // Reset for Next Generation
     private void ResetGeneration()
     {
         currentStep = 0;
@@ -370,6 +315,7 @@ public class GeneticAlgorithm : MonoBehaviour
         }
     }
 
+    // Perform Crossover
     private void Crossover(List<Vector2> parent1, List<Vector2> parent2, out List<Vector2> child1, out List<Vector2> child2)
     {
         child1 = new List<Vector2>(parent1);
@@ -377,10 +323,9 @@ public class GeneticAlgorithm : MonoBehaviour
 
         if (Random.Range(0f, 1f) < crossoverRate)
         {
-            int maxLength = Mathf.Min(parent1.Count, parent2.Count); // Use shorter length for crossover
+            int maxLength = Mathf.Min(parent1.Count, parent2.Count);
             int point1 = Random.Range(1, maxLength - 2);
             int point2 = Random.Range(point1, maxLength - 1);
-
             for (int i = point1; i < point2; i++)
             {
                 child1[i] = parent2[i];
@@ -389,6 +334,7 @@ public class GeneticAlgorithm : MonoBehaviour
         }
     }
 
+    // Apply Mutation
     private void Mutate(List<Vector2> individual)
     {
         for (int i = 0; i < individual.Count; i++)
@@ -403,30 +349,17 @@ public class GeneticAlgorithm : MonoBehaviour
         }
     }
 
-    private List<Vector2> SelectParent()
-    {
-        int candidate1 = Random.Range(0, populationSize);
-        int candidate2 = Random.Range(0, populationSize);
-        return fitnessScores[candidate1] > fitnessScores[candidate2] ? population[candidate1] : population[candidate2];
-    }
-
+    // Get Best Fitness Score
     private float GetBestFitness()
     {
-        float bestFitness = float.MinValue;
-        foreach (float fitness in fitnessScores)
-        {
-            if (fitness > bestFitness)
-            {
-                bestFitness = fitness;
-            }
-        }
-        return bestFitness;
+        return Mathf.Max(fitnessScores.ToArray());
     }
 
+    // Save Best Individual
     private void SaveBestIndividual()
     {
         string path = Application.dataPath + "/GA_TrainingData.csv";
-        using (System.IO.StreamWriter writer = new System.IO.StreamWriter(path))
+        using (StreamWriter writer = new StreamWriter(path))
         {
             writer.WriteLine("MotorTorque,SteeringAngle");
             foreach (Vector2 gene in population[0])

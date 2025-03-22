@@ -1,72 +1,49 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
-using System.Threading.Tasks;
-using Unity.MLAgents;
-using Unity.MLAgents.Actuators;
-using Unity.MLAgents.Sensors;
 
 public class RobotController : MonoBehaviour
 {
-    // naming constraints do not change
-    [SerializeField] private WheelCollider FLC;
-    [SerializeField] private WheelCollider FRC;
-    [SerializeField] private WheelCollider RLC;
-    [SerializeField] private WheelCollider RRC;
+    // Wheel Colliders and Transforms
+    [SerializeField] private WheelCollider FLC, FRC, RLC, RRC;
+    [SerializeField] private Transform FLT, FRT, RLT, RRT;
 
-    [SerializeField] private Transform FLT;
-    [SerializeField] private Transform FRT;
-    [SerializeField] private Transform RLT;
-    [SerializeField] private Transform RRT;
+    // Sensor Transforms
+    [SerializeField] private Transform FRS, L1S, L2S, L3S, R1S, R2S, R3S, ORS;
 
-    [SerializeField] private Transform FRS;
-    [SerializeField] private Transform L1S;
-    [SerializeField] private Transform L2S;
-    [SerializeField] private Transform L3S;
-    [SerializeField] private Transform R1S;
-    [SerializeField] private Transform R2S;
-    [SerializeField] private Transform R3S;
-    [SerializeField] private Transform ORS;
-
-
+    // Movement Parameters
     [Header("Movement Parameters")]
     public float motorTorque = 2000f;
     public float maxSpeed = 50f;
     public float turnSpeed = 30f;
+    public float maxMotorTorque = 400f;
+    public float maxSteeringAngle = 60f;
 
+    // Sensor Parameters
     [Header("Sensor Parameters")]
     public float sensorRange = 10f;
     public float obstacleDetectionDistance = 3f;
     public string roadMaterial = "MT_Road_01";
 
+    // Performance Tuning
     [Header("Performance Tuning")]
     public float steeringSmoothing = 5f;
     public float accelerationSmoothing = 2f;
 
+    // Runtime Variables
     private float currentSteeringAngle = 0f;
     private float currentMotorTorque = 0f;
-
-    private float episodeTime = 0f; // Track the elapsed time since the episode started
-    private const float maxEpisodeTime = 2500f; // Max episode time in seconds (120 seconds)
-
-
-    [Header("Movement Parameters")]
-    public float maxMotorTorque = 400f;
-    public float maxSteeringAngle = 60f;
-    // private int currentStep = 0;
-    private int sequenceLength = 500;
-
-    private void Start()
-    {
-        ga = FindObjectOfType<GeneticAlgorithm>();
-    }
-
     private GeneticAlgorithm ga;
     private int individualIndex;
     private float totalReward;
     private List<Vector2> currentIndividual;
     private bool isActive;
+    public bool shouldRender = true; // Controls visual updates
+
+    // Initialization
+    private void Start()
+    {
+        ga = FindObjectOfType<GeneticAlgorithm>();
+    }
 
     public void InitializeForGA(GeneticAlgorithm geneticAlgorithm, int index)
     {
@@ -84,75 +61,36 @@ public class RobotController : MonoBehaviour
         isActive = true;
     }
 
+    // Update Fitness
     public void UpdateFitness(bool checkSpeed)
     {
         if (!isActive) return;
-        // Debug.Log($"Acitve individual: {individualIndex}");
 
         float reward = HandleTrackRewards(currentMotorTorque, currentSteeringAngle);
         totalReward += reward;
 
         float speed = Vector3.Dot(transform.forward, GetComponent<Rigidbody>().linearVelocity);
 
-        Debug.Log($"Speed: {speed}");
-
-
-        // Check conditions to stop evaluation
         if (IsOutOfTrack() || (checkSpeed && speed <= 1f))
         {
-            ga.UpdateFitness(individualIndex, totalReward, true); // Assign fitness and mark as done
+            ga.UpdateFitness(individualIndex, totalReward, true);
             isActive = false;
-            // Optionally disable rendering or physics for this robot to save resources
-            GetComponent<Rigidbody>().isKinematic = true; // Stop physics updates
+            GetComponent<Rigidbody>().isKinematic = true;
         }
         else if (HandleFinalCheckpoint())
         {
-            ga.UpdateFitness(individualIndex, totalReward, true); // Assign fitness and mark as done
+            ga.UpdateFitness(individualIndex, totalReward, true);
             isActive = false;
             GetComponent<Rigidbody>().isKinematic = true;
         }
     }
 
-
-    // private void FixedUpdate()
-    // {
-    //     if (currentStep < sequenceLength)
-    //     {
-    //         // Debug.Log($"Current Step: {currentStep}, Sequence Length: {sequenceLength}, Gene Length: {ga.population[0].Count}");
-
-    //         // Get motorTorque and steeringAngle from GA
-    //         float motorTorque = ga.population[0][currentStep].x * maxMotorTorque;
-    //         float steeringAngle = ga.population[0][currentStep].y * maxSteeringAngle;
-
-    //         Debug.Log($"Motor Torque: {motorTorque}, Steering Angle: {steeringAngle}, currentStep: {currentStep}");
-
-    //         ApplyMotorTorque(motorTorque);
-    //         ApplySteering(steeringAngle);
-    //         UpdateWheelTransforms();
-
-    //         // Calculate and accumulate fitness using the HandleTrackRewards function
-    //         float reward = HandleTrackRewards(motorTorque, steeringAngle);
-    //         totalReward += reward;
-
-    //         currentStep++;
-    //     }
-    //     else
-    //     {
-    //         //first position
-    //         transform.localPosition = new Vector3(195.6539f, 0.6679955f, 192.1293f);
-    //         transform.rotation = Quaternion.Euler(0f, 180f, 0f);
-    //         currentStep = 0;  // Reset step counter
-    //         ga.UpdateFitness(totalReward);  // Pass accumulated reward to GA as fitness
-    //         totalReward = 0f;  // Reset accumulated reward
-    //     }
-    // }
-
+    // Calculate Track Rewards
     public float HandleTrackRewards(float motorTorque, float steeringAngle)
     {
         float speed = Vector3.Dot(transform.forward, GetComponent<Rigidbody>().linearVelocity);
         float reward = 0f;
 
-        // Reward forward movement
         if (speed > 0f)
         {
             reward += speed > 1.5f ? (speed < 10f ? 0.1f : -0.1f) : -0.1f;
@@ -162,7 +100,6 @@ public class RobotController : MonoBehaviour
             reward -= 1f;
         }
 
-        // Sensor-based rewards/penalties
         var sensorReadings = GetSensorData();
         foreach (var sensorReading in sensorReadings)
         {
@@ -179,272 +116,90 @@ public class RobotController : MonoBehaviour
             }
         }
 
-        // Penalize going off-track
         if (IsOutOfTrack())
         {
             reward -= 10f;
         }
 
-        // Add checkpoint rewards
-        for (int i = 1; i <= 22; i++)
-        {
-            string checkpointName = "CP" + i;
-            if (CheckForCheckpointPassed(checkpointName))
-            {
-                reward += 0.2f * i; // Increasing reward for later checkpoints
-                break; // Only reward the current checkpoint
-            }
-        }
-
         return reward;
     }
 
-
-    // Add these methods to RobotController.cs
-
-    // Method to reset the car without triggering ML-Agents logic
+    // Manual Reset
     public void ManualReset()
     {
         transform.localPosition = new Vector3(195.6539f, 0.6679955f, 192.1293f);
         transform.rotation = Quaternion.Euler(0f, 180f, 0f);
         Rigidbody rb = GetComponent<Rigidbody>();
-        rb.isKinematic = false; // Ensure the Rigidbody is non-kinematic before setting velocity
+        rb.isKinematic = false;
         rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
         currentMotorTorque = 0f;
         currentSteeringAngle = 0f;
         SetSensorOrientations();
     }
-    // Method to directly apply torque/steering (bypass ML-Agents actions)
+
+    // Manual Control Application
     public void ManualApplyControl(float torque, float steering)
     {
         ApplySteering(steering);
         ApplyMotorTorque(torque);
-        UpdateWheelTransforms();
-    }
-
-    // Method to get the distance covered (for GA fitness)
-    public float GetDistanceCovered()
-    {
-        return transform.position.z; // Adjust based on your track layout
-    }
-
-    private bool CheckForTurningPoint(Dictionary<string, (float, string)> sensorReadings)
-    {
-        return sensorReadings["Front"].Item2.StartsWith("MT_Turn") ||
-               sensorReadings["Left1"].Item2.StartsWith("MT_Turn") ||
-               sensorReadings["Left2"].Item2.StartsWith("MT_Turn") ||
-               sensorReadings["Right1"].Item2.StartsWith("MT_Turn") ||
-               sensorReadings["Right2"].Item2.StartsWith("MT_Turn");
-    }
-
-    private bool CheckForCheckpointInFront(Dictionary<string, (float, string)> sensorReadings)
-    {
-        return sensorReadings["Front"].Item2.StartsWith("CP") ||
-               sensorReadings["Right2"].Item2.StartsWith("CP") ||
-               sensorReadings["Left1"].Item2.StartsWith("CP");
-    }
-
-    private void HandleEdgeDetection(Dictionary<string, (float, string)> sensorReadings, float steeringAngle, float motorTorque)
-    {
-        bool leftOverEdge = (sensorReadings["Left1"].Item2.StartsWith("None") &&
-                                sensorReadings["Left2"].Item2.StartsWith("None") &&
-                                sensorReadings["Left3"].Item2.StartsWith("None") &&
-                                sensorReadings["Right1"].Item2.StartsWith("MT_Road") &&
-                                sensorReadings["Right2"].Item2.StartsWith("MT_Road") &&
-                                sensorReadings["Right3"].Item2.StartsWith("MT_Road") &&
-                                (sensorReadings["Front"].Item2.StartsWith("MT_Road") || sensorReadings["Front"].Item2.StartsWith("ED")));
-
-        bool rightOverEdge = (sensorReadings["Right1"].Item2.StartsWith("None") &&
-                                sensorReadings["Right2"].Item2.StartsWith("None") &&
-                                sensorReadings["Right3"].Item2.StartsWith("None") &&
-                                sensorReadings["Left1"].Item2.StartsWith("MT_Road") &&
-                                sensorReadings["Left2"].Item2.StartsWith("MT_Road") &&
-                                sensorReadings["Left3"].Item2.StartsWith("MT_Road") &&
-                                sensorReadings["Front"].Item2.StartsWith("MT_Road"));
-
-
-        bool leftEdgeDetected = (sensorReadings["Left3"].Item2.StartsWith("ED") && sensorReadings["Left3"].Item1 < 2.5f) || leftOverEdge;
-
-
-        bool rightEdgeDetected = (sensorReadings["Right3"].Item2.StartsWith("ED") && sensorReadings["Right3"].Item1 < 2.5f) || rightOverEdge;
-
-
-        if (leftEdgeDetected || rightEdgeDetected)
+        if (shouldRender)
         {
-            // AddReward(-2f);
-
-            //Remove after training
-            // if (leftOverEdge || rightOverEdge)
-            // {
-            //     EndEpisode();
-            // }
-
-        }
-
-        float deviation = sensorReadings["Left3"].Item1 - sensorReadings["Right3"].Item1;
-        if (Mathf.Abs(deviation) < 0.5f && sensorReadings["Left3"].Item2.StartsWith("ED") && sensorReadings["Right3"].Item2.StartsWith("ED"))
-        {
-            // AddReward(0.0001f);
-        }
-
-
-    }
-
-    private void HandleCheckpointRewards(Dictionary<string, (float, string)> sensorReadings)
-    {
-        for (int i = 1; i <= 22; i++)
-        {
-            string checkpointName = "CP" + i;
-            if (CheckForCheckpointPassed(checkpointName))
-            {
-                // AddReward(0.2f * i);
-                break;
-            }
+            UpdateWheelTransforms();
         }
     }
 
-    public bool HandleFinalCheckpoint()
-    {
-        if (HasPassedFinalCheckpoint() && IsStopped())
-        {
-            // AddReward(1f);
-            // Debug.Log("EndEpisode: Successfully completed");
-            // EndEpisode();
-            return true;
-        }
-        return false;
-    }
-
+    // Check if on Turn
     public bool isOnTurn()
     {
-        Collider[] hitColliders = Physics.OverlapSphere(transform.position, 2f); // Adjust radius as necessary
+        Collider[] hitColliders = Physics.OverlapSphere(transform.position, 2f);
         foreach (var collider in hitColliders)
         {
             if (collider.gameObject.name.StartsWith("MT_Turn"))
             {
-                // Debug.Log($"collider object: {collider.gameObject.name}");
-                return true; // The robot is on the road, not out of track
+                return true;
             }
         }
-
-        // If no road material is found, the robot is out of the track
         return false;
     }
 
-
+    // Check if Out of Track
     public bool IsOutOfTrack()
     {
-        // Check if the robot has moved outside the allowed track area
-        // You can define track boundaries based on the road material or specific coordinates
-        // Here, assuming the robot has gone out of bounds of the road material
-
-        Collider[] hitColliders = Physics.OverlapSphere(transform.position, 2f); // Adjust radius as necessary
+        Collider[] hitColliders = Physics.OverlapSphere(transform.position, 2f);
         foreach (var collider in hitColliders)
         {
-            // Debug.Log($"collider object: {collider.gameObject.name}");
-
-
             if (collider.gameObject.name.StartsWith("ED"))
                 return true;
-
-            if ((collider.gameObject.name.StartsWith("MT_Road") || collider.gameObject.name.StartsWith("MT_Turn")))
-            {
-                // Debug.Log($"collider object: {collider.gameObject.name}");
-                return false; // The robot is on the road, not out of track
-            }
+            if (collider.gameObject.name.StartsWith("MT_Road") || collider.gameObject.name.StartsWith("MT_Turn"))
+                return false;
         }
-
-        // If no road material is found, the robot is out of the track
         return true;
     }
 
-    private bool CheckForCheckpointPassed(string checkpointName)
+    // Handle Final Checkpoint
+    public bool HandleFinalCheckpoint()
     {
-        // Check if the robot has passed a checkpoint
-        Collider[] hitColliders = Physics.OverlapSphere(transform.position, 1f); // Adjust radius as needed
-        foreach (var collider in hitColliders)
-        {
-            if (collider.gameObject.name.StartsWith(checkpointName))
-            {
-                return true; // The robot has passed this checkpoint
-            }
-        }
-        return false;
+        return HasPassedFinalCheckpoint() && IsStopped();
     }
 
-    public bool HasPassedFinalCheckpoint()
+    private bool HasPassedFinalCheckpoint()
     {
-        // Check if the robot has passed CP22
-        return CheckForCheckpointPassed("CP22");
+        Collider[] hitColliders = Physics.OverlapSphere(transform.position, 1f);
+        foreach (var collider in hitColliders)
+        {
+            if (collider.gameObject.name.StartsWith("CP22"))
+                return true;
+        }
+        return false;
     }
 
     private bool IsStopped()
     {
-        // Check if the robot has stopped moving (velocity is low)
-        return GetComponent<Rigidbody>().linearVelocity.magnitude < 0.1f; // Adjust as necessary for "stopped" state
+        return GetComponent<Rigidbody>().linearVelocity.magnitude < 0.1f;
     }
 
-    public void CollectObservations(VectorSensor sensor)
-    {
-        var sensorReadings = GetSensorData();
-        float speed = Vector3.Dot(transform.forward, GetComponent<Rigidbody>().linearVelocity);
-        int frontItemId = GetHitItemId(sensorReadings["Front"].Item2);
-        sensor.AddObservation(frontItemId);
-        sensor.AddObservation(sensorReadings["Front"].Item1);
-        int left1ItemId = GetHitItemId(sensorReadings["Left1"].Item2);
-        sensor.AddObservation(left1ItemId);
-        sensor.AddObservation(sensorReadings["Left1"].Item1);
-        int Left2ItemId = GetHitItemId(sensorReadings["Left2"].Item2);
-        sensor.AddObservation(Left2ItemId);
-        sensor.AddObservation(sensorReadings["Left2"].Item1);
-        int Left3ItemId = GetHitItemId(sensorReadings["Left3"].Item2);
-        sensor.AddObservation(Left3ItemId);
-        sensor.AddObservation(sensorReadings["Left3"].Item1);
-        int Right1ItemId = GetHitItemId(sensorReadings["Right1"].Item2);
-        sensor.AddObservation(Right1ItemId);
-        sensor.AddObservation(sensorReadings["Right1"].Item1);
-        int Right2ItemId = GetHitItemId(sensorReadings["Right2"].Item2);
-        sensor.AddObservation(Right2ItemId);
-        sensor.AddObservation(sensorReadings["Right2"].Item1);
-        int Right3ItemId = GetHitItemId(sensorReadings["Right3"].Item2);
-        sensor.AddObservation(Right3ItemId);
-        sensor.AddObservation(sensorReadings["Right3"].Item1);
-        sensor.AddObservation(sensorReadings["ORS"].Item1);
-        sensor.AddObservation(sensorReadings["ORSZ"].Item1);
-        sensor.AddObservation(speed);
-
-    }
-
-    private int GetHitItemId(string hitName)
-    {
-        if (hitName.StartsWith("MT_Road"))
-            return 1;
-        else if (hitName.StartsWith("MT_Turn"))
-            return 2;
-        else if (hitName.StartsWith("CP"))
-            return 3;
-        else if (hitName.StartsWith("Plane"))
-            return 4;
-        else if (hitName.StartsWith("ED"))
-            return 5;
-        else if (hitName.StartsWith("Cube"))
-            return 6;
-        else
-            return 0;
-    }
-
-    private void SetSensorOrientations()
-    {
-        FRS.localRotation = Quaternion.Euler(8, 0, 0);
-        L1S.localRotation = Quaternion.Euler(8, -15, 0);
-        L2S.localRotation = Quaternion.Euler(8, -35, 0);
-        L3S.localRotation = Quaternion.Euler(10, -90, 0);
-        R1S.localRotation = Quaternion.Euler(8, 15, 0);
-        R2S.localRotation = Quaternion.Euler(8, 35, 0);
-        R3S.localRotation = Quaternion.Euler(10, 90, 0);
-    }
-
+    // Sensor Data Collection
     private Dictionary<string, (float, string)> GetSensorData()
     {
         return new Dictionary<string, (float, string)>
@@ -461,44 +216,31 @@ public class RobotController : MonoBehaviour
         };
     }
 
-    private (float, string) CheckOrientationSensorZ()
-    {
-        // Get the robot's forward-facing angle relative to the world
-        float zaw = transform.eulerAngles.z;
-        // Debug.Log($"xaw pitch: {xaw}");
-        // Normalize the pitch
-        float normalizedPitch = (zaw > 180) ? zaw - 360 : zaw;
-
-        // Return the xaw value along with a descriptor
-        return (normalizedPitch, "OrientationZ");
-    }
-
     private (float, string) CheckOrientationSensor()
     {
-        // Get the robot's forward-facing angle relative to the world
         float xaw = transform.eulerAngles.x;
-        // Debug.Log($"xaw pitch: {xaw}");
-        // Normalize the pitch
         float normalizedPitch = (xaw > 180) ? xaw - 360 : xaw;
-
-        // Return the xaw value along with a descriptor
         return (normalizedPitch, "OrientationX");
     }
 
-
+    private (float, string) CheckOrientationSensorZ()
+    {
+        float zaw = transform.eulerAngles.z;
+        float normalizedPitch = (zaw > 180) ? zaw - 360 : zaw;
+        return (normalizedPitch, "OrientationZ");
+    }
 
     private (float, string) CheckSensor(Transform sensor)
     {
         RaycastHit hit;
         if (Physics.Raycast(sensor.position, sensor.forward, out hit, sensorRange))
         {
-            // Debug.DrawLine(sensor.position, hit.point, Color.red);
             return (hit.distance, hit.collider.gameObject.name);
         }
-        // Debug.DrawLine(sensor.position, sensor.position + sensor.forward * sensorRange, Color.green);
         return (sensorRange, "None");
     }
 
+    // Apply Steering
     public void ApplySteering(float targetAngle)
     {
         currentSteeringAngle = Mathf.Lerp(currentSteeringAngle, targetAngle, Time.deltaTime * steeringSmoothing);
@@ -506,6 +248,7 @@ public class RobotController : MonoBehaviour
         FRC.steerAngle = currentSteeringAngle;
     }
 
+    // Apply Motor Torque
     public void ApplyMotorTorque(float targetTorque)
     {
         currentMotorTorque = Mathf.Lerp(currentMotorTorque, targetTorque, Time.deltaTime * accelerationSmoothing);
@@ -515,6 +258,7 @@ public class RobotController : MonoBehaviour
         RRC.motorTorque = currentMotorTorque;
     }
 
+    // Update Wheel Transforms
     public void UpdateWheelTransforms()
     {
         UpdateWheelTransform(FLC, FLT);
@@ -531,5 +275,16 @@ public class RobotController : MonoBehaviour
         wheelTransform.position = position;
         wheelTransform.rotation = rotation;
     }
-}
 
+    // Set Sensor Orientations
+    private void SetSensorOrientations()
+    {
+        FRS.localRotation = Quaternion.Euler(8, 0, 0);
+        L1S.localRotation = Quaternion.Euler(8, -15, 0);
+        L2S.localRotation = Quaternion.Euler(8, -35, 0);
+        L3S.localRotation = Quaternion.Euler(10, -90, 0);
+        R1S.localRotation = Quaternion.Euler(8, 15, 0);
+        R2S.localRotation = Quaternion.Euler(8, 35, 0);
+        R3S.localRotation = Quaternion.Euler(10, 90, 0);
+    }
+}
