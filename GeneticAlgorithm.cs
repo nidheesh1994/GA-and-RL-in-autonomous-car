@@ -135,11 +135,11 @@ public class GeneticAlgorithm : MonoBehaviour
             }
 
             fitnessScores = new List<float>(new float[populationSize]);
-        activeIndividuals = new List<bool>(new bool[populationSize]);
-        for (int i = 0; i < populationSize; i++)
-        {
-            activeIndividuals[i] = true;
-        }
+            activeIndividuals = new List<bool>(new bool[populationSize]);
+            for (int i = 0; i < populationSize; i++)
+            {
+                activeIndividuals[i] = true;
+            }
 
             Debug.Log($"✅ Population successfully loaded. Population Size: {population.Count}");
             return true;
@@ -274,61 +274,82 @@ public class GeneticAlgorithm : MonoBehaviour
 
     private void ExtendIndividual(int index, bool isOnTurn)
     {
-        // Add a new random gene to this individual’s sequence
-        population[index].Add(new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
-        // Update currentGeneLength if this individual’s length exceeds it
+        if (Random.value < 0.1f) // 10% chance for a fully random gene
+        {
+            population[index].Add(new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
+        }
+        else
+        {
+            Vector2 lastGene = population[index][population[index].Count - 1];
+            float newTorque = lastGene.x + Random.Range(-0.1f, 0.1f);
+            float newSteering = lastGene.y + Random.Range(-0.1f, 0.1f);
+
+            // Bias torque and steering on turns
+            if (isOnTurn)
+            {
+                newTorque = Mathf.Clamp(newTorque, -1f, 1f); // Allow braking/reversing
+                newSteering = Mathf.Clamp(newSteering + Random.Range(-0.2f, 0.2f), -1f, 1f); // Larger steering variance
+            }
+            else
+            {
+                newTorque = Mathf.Clamp(newTorque, 0f, 1f); // Forward movement only
+                newSteering = Mathf.Clamp(newSteering, -1f, 1f);
+            }
+
+            population[index].Add(new Vector2(newTorque, newSteering));
+        }
         currentGeneLength = Mathf.Max(currentGeneLength, population[index].Count);
     }
 
     private void EvolvePopulation()
-{
-    // 🔥 Step 1: Sort Population by Fitness (Descending Order)
-    List<int> sortedIndices = new List<int>();
-    for (int i = 0; i < populationSize; i++) sortedIndices.Add(i);
-
-    sortedIndices.Sort((a, b) => fitnessScores[b].CompareTo(fitnessScores[a])); // Sort by highest fitness
-
-    List<List<Vector2>> newPopulation = new List<List<Vector2>>();
-
-    // 🔥 Step 2: Select the top 50% of the population
-    int eliteSize = populationSize / 2;
-    List<List<Vector2>> eliteIndividuals = new List<List<Vector2>>();
-    for (int i = 0; i < eliteSize; i++)
     {
-        eliteIndividuals.Add(population[sortedIndices[i]]);
+        // 🔥 Step 1: Sort Population by Fitness (Descending Order)
+        List<int> sortedIndices = new List<int>();
+        for (int i = 0; i < populationSize; i++) sortedIndices.Add(i);
+
+        sortedIndices.Sort((a, b) => fitnessScores[b].CompareTo(fitnessScores[a])); // Sort by highest fitness
+
+        List<List<Vector2>> newPopulation = new List<List<Vector2>>();
+
+        // 🔥 Step 2: Select the top 50% of the population
+        int eliteSize = populationSize / 2;
+        List<List<Vector2>> eliteIndividuals = new List<List<Vector2>>();
+        for (int i = 0; i < eliteSize; i++)
+        {
+            eliteIndividuals.Add(population[sortedIndices[i]]);
+        }
+
+        // 🔥 Step 3: Generate the Next Generation
+        for (int i = 0; i < populationSize; i += 2)
+        {
+            // Select parents from the elite pool
+            var parent1 = eliteIndividuals[Random.Range(0, eliteSize)];
+            var parent2 = eliteIndividuals[Random.Range(0, eliteSize)];
+
+            // Perform crossover
+            Crossover(parent1, parent2, out var child1, out var child2);
+
+            // Apply mutation
+            Mutate(child1);
+            Mutate(child2);
+
+            // Ensure children match the maximum gene length
+            ExtendToLength(child1, currentGeneLength);
+            ExtendToLength(child2, currentGeneLength);
+
+            newPopulation.Add(child1);
+            newPopulation.Add(child2);
+        }
+
+        // 🔥 Step 4: Update the population with the new generation
+        population = newPopulation;
+
+        // 🔥 Step 5: Assign new individuals to robots
+        for (int i = 0; i < populationSize; i++)
+        {
+            robotInstances[i].SetIndividual(population[i]);
+        }
     }
-
-    // 🔥 Step 3: Generate the Next Generation
-    for (int i = 0; i < populationSize; i += 2)
-    {
-        // Select parents from the elite pool
-        var parent1 = eliteIndividuals[Random.Range(0, eliteSize)];
-        var parent2 = eliteIndividuals[Random.Range(0, eliteSize)];
-
-        // Perform crossover
-        Crossover(parent1, parent2, out var child1, out var child2);
-
-        // Apply mutation
-        Mutate(child1);
-        Mutate(child2);
-
-        // Ensure children match the maximum gene length
-        ExtendToLength(child1, currentGeneLength);
-        ExtendToLength(child2, currentGeneLength);
-
-        newPopulation.Add(child1);
-        newPopulation.Add(child2);
-    }
-
-    // 🔥 Step 4: Update the population with the new generation
-    population = newPopulation;
-
-    // 🔥 Step 5: Assign new individuals to robots
-    for (int i = 0; i < populationSize; i++)
-    {
-        robotInstances[i].SetIndividual(population[i]);
-    }
-}
 
 
     private void ExtendToLength(List<Vector2> individual, int targetLength)

@@ -150,8 +150,9 @@ public class RobotController : MonoBehaviour
     public float HandleTrackRewards(float motorTorque, float steeringAngle)
     {
         float speed = Vector3.Dot(transform.forward, GetComponent<Rigidbody>().linearVelocity);
-        float reward = 0f;  // Reward accumulator
+        float reward = 0f;
 
+        // Reward forward movement
         if (speed > 0f)
         {
             reward += speed > 1.5f ? (speed < 10f ? 0.1f : -0.1f) : -0.1f;
@@ -161,6 +162,7 @@ public class RobotController : MonoBehaviour
             reward -= 1f;
         }
 
+        // Sensor-based rewards/penalties
         var sensorReadings = GetSensorData();
         foreach (var sensorReading in sensorReadings)
         {
@@ -177,12 +179,24 @@ public class RobotController : MonoBehaviour
             }
         }
 
+        // Penalize going off-track
         if (IsOutOfTrack())
         {
             reward -= 10f;
         }
 
-        return reward;  // Return accumulated reward
+        // Add checkpoint rewards
+        for (int i = 1; i <= 22; i++)
+        {
+            string checkpointName = "CP" + i;
+            if (CheckForCheckpointPassed(checkpointName))
+            {
+                reward += 0.2f * i; // Increasing reward for later checkpoints
+                break; // Only reward the current checkpoint
+            }
+        }
+
+        return reward;
     }
 
 
@@ -204,7 +218,6 @@ public class RobotController : MonoBehaviour
     // Method to directly apply torque/steering (bypass ML-Agents actions)
     public void ManualApplyControl(float torque, float steering)
     {
-
         ApplySteering(steering);
         ApplyMotorTorque(torque);
         UpdateWheelTransforms();
