@@ -59,6 +59,9 @@ public class RobotController : MonoBehaviour
         currentIndividual = individual;
         totalReward = 0f;
         isActive = true;
+        // ✅ Reset steering and torque for fresh generation
+        currentMotorTorque = 0f;
+        currentSteeringAngle = 0f;
     }
 
     // Update Fitness
@@ -133,6 +136,9 @@ public class RobotController : MonoBehaviour
         rb.isKinematic = false;
         rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
+        // Sleep & wake for clean reset
+        rb.Sleep();
+        rb.WakeUp();
         currentMotorTorque = 0f;
         currentSteeringAngle = 0f;
         SetSensorOrientations();

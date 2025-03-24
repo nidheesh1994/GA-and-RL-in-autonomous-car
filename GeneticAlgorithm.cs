@@ -6,9 +6,9 @@ using SimpleJSON;
 public class GeneticAlgorithm : MonoBehaviour
 {
     // Configuration Parameters
-    public int populationSize = 50;
-    public int initialGeneLength = 100; // Starting gene length
-    public float mutationRate = 0.01f;
+    public int populationSize = 1;
+    public int initialGeneLength = 400; // Starting gene length
+    public float mutationRate = 0.02f;
     public float crossoverRate = 0.7f;
     public int generations = 10000;
 
@@ -23,6 +23,13 @@ public class GeneticAlgorithm : MonoBehaviour
     private int currentGeneration = 0;
     private int currentGeneLength; // Tracks the current maximum gene length
     private string saveFilePath;
+    public bool dynamicGeneLength = true;
+
+    private bool isCoolDown = false;
+
+    private int maxCoolDownSteps = 500;
+
+    private int coolDownStep = 0;
 
     // Initialization
     private void Start()
@@ -31,6 +38,15 @@ public class GeneticAlgorithm : MonoBehaviour
         currentGeneLength = initialGeneLength;
         saveFilePath = Application.persistentDataPath + "/GA_PopulationData.json";
         population = new List<List<Vector2>>();
+
+        AudioListener[] listeners = FindObjectsOfType<AudioListener>();
+        foreach (AudioListener listener in listeners)
+        {
+            if (listener != GetComponent<AudioListener>())
+            {
+                listener.enabled = false;
+            }
+        }
 
         if (LoadPopulationFromFile())
         {
@@ -47,7 +63,7 @@ public class GeneticAlgorithm : MonoBehaviour
     // Cleanup
     private void OnApplicationQuit()
     {
-        SavePopulationToFile();
+        // SavePopulationToFile();
     }
 
     // Save Population to File
@@ -160,17 +176,30 @@ public class GeneticAlgorithm : MonoBehaviour
     // Instantiate Robots
     private void InitializeRobots()
     {
+        // Destroy existing robots if any
+        if (robotInstances != null)
+        {
+            foreach (var robot in robotInstances)
+            {
+                if (robot != null) Destroy(robot.gameObject);
+            }
+        }
+
         robotInstances = new List<RobotController>();
+
         for (int i = 0; i < populationSize; i++)
         {
             GameObject robotObj = Instantiate(robotPrefab, GetSpawnPosition(i), Quaternion.Euler(0f, 180f, 0f));
             robotObj.layer = LayerMask.NameToLayer("Robot");
+
             RobotController robot = robotObj.GetComponent<RobotController>();
             robot.InitializeForGA(this, i);
+            robot.SetIndividual(population[i]); // 👈 assign genome immediately
+
             robotInstances.Add(robot);
 
-            // Optimize rendering: disable for all but the first robot
-            if (i > 0)
+            // Optional: optimize rendering
+            if (i < 0)
             {
                 Renderer[] renderers = robotObj.GetComponentsInChildren<Renderer>();
                 foreach (Renderer renderer in renderers)
@@ -191,6 +220,17 @@ public class GeneticAlgorithm : MonoBehaviour
     // Main Simulation Loop
     private void FixedUpdate()
     {
+        if (isCoolDown)
+        {
+            coolDownStep++;
+            if (coolDownStep > maxCoolDownSteps)
+            {
+                isCoolDown = false;
+                coolDownStep = 0;
+            }
+            Debug.LogWarning($"Cooling down, step: {coolDownStep}.");
+            return;
+        }
         if (population == null || population.Count == 0)
         {
             Debug.LogWarning("⚠ Population not initialized.");
@@ -211,7 +251,10 @@ public class GeneticAlgorithm : MonoBehaviour
                 }
                 else if (activeIndividuals[i])
                 {
-                    ExtendIndividual(i, robotInstances[i].isOnTurn());
+                    if (dynamicGeneLength)
+                    {
+                        ExtendIndividual(i, robotInstances[i].isOnTurn());
+                    }
                 }
             }
             currentStep++;
@@ -226,14 +269,16 @@ public class GeneticAlgorithm : MonoBehaviour
         }
         else
         {
-            Debug.Log($"Generation {currentGeneration} ended. Best Fitness: {GetBestFitness()}, Gene Length: {currentGeneLength}");
+            // Debug.Log($"Generation {currentGeneration} ended. Best Fitness: {GetBestFitness()}, Gene Length: {currentGeneLength}");
             EvolvePopulation();
             ResetGeneration();
+            isCoolDown = true;
             currentGeneration++;
             if (currentGeneration == generations)
             {
                 SaveBestIndividual();
             }
+
         }
     }
 
@@ -263,37 +308,64 @@ public class GeneticAlgorithm : MonoBehaviour
     // Evolve the Population
     private void EvolvePopulation()
     {
+        // Step 1: Sort population by fitness (descending)
         List<int> sortedIndices = new List<int>();
         for (int i = 0; i < populationSize; i++) sortedIndices.Add(i);
         sortedIndices.Sort((a, b) => fitnessScores[b].CompareTo(fitnessScores[a]));
+        Debug.Log($"sorted first: {fitnessScores[sortedIndices[0]]}.");
 
+        // Step 2: Calculate and log best and average fitness
+        float bestFitness = fitnessScores[sortedIndices[0]];
+        float totalFitness = 0f;
+        foreach (float fitness in fitnessScores)
+            totalFitness += fitness;
+        float avgFitness = totalFitness / populationSize;
+
+        Debug.Log($"Generation {currentGeneration} ended. Best Fitness: {bestFitness:F2}, Avg Fitness: {avgFitness:F2}, Gene Length: {currentGeneLength}");
+
+        // Step 3: Elitism - preserve top 10%
+        int eliteCount = Mathf.Max(1, populationSize / 10);
         List<List<Vector2>> newPopulation = new List<List<Vector2>>();
-        int eliteSize = populationSize / 2;
-        List<List<Vector2>> eliteIndividuals = new List<List<Vector2>>();
-        for (int i = 0; i < eliteSize; i++)
+        for (int i = 0; i < eliteCount; i++)
         {
-            eliteIndividuals.Add(population[sortedIndices[i]]);
+            newPopulation.Add(new List<Vector2>(population[sortedIndices[i]])); // clone elite
         }
 
-        for (int i = 0; i < populationSize; i += 2)
+        // Step 4: Use top 50% for breeding
+        int breedingPoolSize = populationSize / 2;
+        List<List<Vector2>> breedingPool = new List<List<Vector2>>();
+        for (int i = 0; i < breedingPoolSize; i++)
         {
-            var parent1 = eliteIndividuals[Random.Range(0, eliteSize)];
-            var parent2 = eliteIndividuals[Random.Range(0, eliteSize)];
+            breedingPool.Add(population[sortedIndices[i]]);
+        }
+
+        // Step 5: Generate rest of the population
+        while (newPopulation.Count < populationSize)
+        {
+            var parent1 = breedingPool[Random.Range(0, breedingPoolSize)];
+            var parent2 = breedingPool[Random.Range(0, breedingPoolSize)];
             Crossover(parent1, parent2, out var child1, out var child2);
             Mutate(child1);
             Mutate(child2);
-            ExtendToLength(child1, currentGeneLength);
-            ExtendToLength(child2, currentGeneLength);
+            if (dynamicGeneLength)
+            {
+                ExtendToLength(child1, currentGeneLength);
+                ExtendToLength(child2, currentGeneLength);
+            }
             newPopulation.Add(child1);
-            newPopulation.Add(child2);
+            if (newPopulation.Count < populationSize)
+                newPopulation.Add(child2);
         }
 
         population = newPopulation;
+
+        // Step 6: Assign new individuals to robots
         for (int i = 0; i < populationSize; i++)
         {
             robotInstances[i].SetIndividual(population[i]);
         }
     }
+
 
     // Extend Individual to Target Length
     private void ExtendToLength(List<Vector2> individual, int targetLength)
@@ -308,11 +380,12 @@ public class GeneticAlgorithm : MonoBehaviour
     private void ResetGeneration()
     {
         currentStep = 0;
+        activeIndividuals = new List<bool>(new bool[populationSize]);
+
         for (int i = 0; i < populationSize; i++)
-        {
             activeIndividuals[i] = true;
-            robotInstances[i].ManualReset();
-        }
+
+        InitializeRobots(); // 🔁 Destroy old, spawn new, reset fresh
     }
 
     // Perform Crossover
