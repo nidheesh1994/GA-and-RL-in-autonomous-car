@@ -96,18 +96,33 @@ public class RobotController : MonoBehaviour
 
         if (speed > 0f)
         {
-            reward += speed > 1.5f ? (speed < 10f ? 0.1f : -0.1f) : -0.1f;
+            reward += speed > 2f ? (speed < 10f ? 1f : -0.3f) : -0.3f;
         }
         else
         {
             reward -= 1f;
         }
 
+        // if((isOnTurn(1) || isOnTurn(2)) && steeringAngle > 0) {
+        //     Debug.Log("Turning rewards adding");
+        //     reward += 2f;
+        // }
+
         var sensorReadings = GetSensorData();
         foreach (var sensorReading in sensorReadings)
         {
             float distance = sensorReading.Value.Item1;
             string hitObject = sensorReading.Value.Item2;
+
+            if (sensorReading.Key == "Left1" || sensorReading.Key == "Front" || sensorReading.Key == "Right1")
+            {
+                if ((hitObject.Contains("MT_Turn (1)") || hitObject.Contains("MT_Turn (2)")) && steeringAngle > 30f)
+                {
+                    Debug.Log("Turning rewards adding");
+                    reward += 1f;
+                }
+            }
+
 
             if (hitObject.Contains("Cube") && distance < 1f)
             {
@@ -130,7 +145,8 @@ public class RobotController : MonoBehaviour
     // Manual Reset
     public void ManualReset()
     {
-        transform.localPosition = new Vector3(195.6539f, 0.6679955f, 192.1293f);
+        // transform.localPosition = new Vector3(195.6539f, 0.6679955f, 192.1293f); //first env location
+        transform.localPosition = new Vector3(195.6539f, 0.6679955f, -68f); // second env location 
         transform.rotation = Quaternion.Euler(0f, 180f, 0f);
         Rigidbody rb = GetComponent<Rigidbody>();
         rb.isKinematic = false;
@@ -156,12 +172,13 @@ public class RobotController : MonoBehaviour
     }
 
     // Check if on Turn
-    public bool isOnTurn()
+    public bool isOnTurn(int turn = 0)
     {
         Collider[] hitColliders = Physics.OverlapSphere(transform.position, 2f);
         foreach (var collider in hitColliders)
         {
-            if (collider.gameObject.name.StartsWith("MT_Turn"))
+            string turning = turn > 0 ? " (" + turn + ")" : "";
+            if (collider.gameObject.name.StartsWith("MT_Turn" + turning))
             {
                 return true;
             }

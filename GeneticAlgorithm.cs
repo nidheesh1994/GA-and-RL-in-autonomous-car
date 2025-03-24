@@ -24,12 +24,10 @@ public class GeneticAlgorithm : MonoBehaviour
     private int currentGeneLength; // Tracks the current maximum gene length
     private string saveFilePath;
     public bool dynamicGeneLength = true;
-
     private bool isCoolDown = false;
-
     private int maxCoolDownSteps = 500;
-
     private int coolDownStep = 0;
+    private int freezeIndex = 0; // Index up to which genes are frozen
 
     // Initialization
     private void Start()
@@ -314,24 +312,42 @@ public class GeneticAlgorithm : MonoBehaviour
         sortedIndices.Sort((a, b) => fitnessScores[b].CompareTo(fitnessScores[a]));
         Debug.Log($"sorted first: {fitnessScores[sortedIndices[0]]}.");
 
-        // Step 2: Calculate and log best and average fitness
+        // Step 2: Calculate best and average fitness
         float bestFitness = fitnessScores[sortedIndices[0]];
         float totalFitness = 0f;
         foreach (float fitness in fitnessScores)
             totalFitness += fitness;
         float avgFitness = totalFitness / populationSize;
 
+        // Step 3: Freeze more genes if condition met
+        if (avgFitness >= 0.8f * bestFitness && freezeIndex < currentGeneLength - 1)
+        {
+            int freezeStep = currentGeneLength / 10;
+            int targetFreeze = freezeIndex + freezeStep;
+
+            // ❄️ Cap freeze at 50% of current gene length
+            freezeIndex = Mathf.Min(targetFreeze, currentGeneLength / 2);
+
+            Debug.Log($"🧊 Freezing genes from 0 to {freezeIndex - 1}");
+        }
+
+        // // Step 4: Update current gene length to max observed
+        // int maxGeneLength = 0;
+        // foreach (var individual in population)
+        //     maxGeneLength = Mathf.Max(maxGeneLength, individual.Count);
+        // currentGeneLength = maxGeneLength;
+
         Debug.Log($"Generation {currentGeneration} ended. Best Fitness: {bestFitness:F2}, Avg Fitness: {avgFitness:F2}, Gene Length: {currentGeneLength}");
 
-        // Step 3: Elitism - preserve top 10%
+        // Step 5: Elitism - keep top 10%
         int eliteCount = Mathf.Max(1, populationSize / 10);
         List<List<Vector2>> newPopulation = new List<List<Vector2>>();
         for (int i = 0; i < eliteCount; i++)
         {
-            newPopulation.Add(new List<Vector2>(population[sortedIndices[i]])); // clone elite
+            newPopulation.Add(new List<Vector2>(population[sortedIndices[i]]));
         }
 
-        // Step 4: Use top 50% for breeding
+        // Step 6: Create breeding pool from top 50%
         int breedingPoolSize = populationSize / 2;
         List<List<Vector2>> breedingPool = new List<List<Vector2>>();
         for (int i = 0; i < breedingPoolSize; i++)
@@ -339,7 +355,7 @@ public class GeneticAlgorithm : MonoBehaviour
             breedingPool.Add(population[sortedIndices[i]]);
         }
 
-        // Step 5: Generate rest of the population
+        // Step 7: Generate rest of the population
         while (newPopulation.Count < populationSize)
         {
             var parent1 = breedingPool[Random.Range(0, breedingPoolSize)];
@@ -359,12 +375,13 @@ public class GeneticAlgorithm : MonoBehaviour
 
         population = newPopulation;
 
-        // Step 6: Assign new individuals to robots
+        // Step 8: Assign new individuals to robots
         for (int i = 0; i < populationSize; i++)
         {
             robotInstances[i].SetIndividual(population[i]);
         }
     }
+
 
 
     // Extend Individual to Target Length
@@ -394,10 +411,10 @@ public class GeneticAlgorithm : MonoBehaviour
         child1 = new List<Vector2>(parent1);
         child2 = new List<Vector2>(parent2);
 
-        if (Random.Range(0f, 1f) < crossoverRate)
+        int maxLength = Mathf.Min(parent1.Count, parent2.Count);
+        if (Random.Range(0f, 1f) < crossoverRate && maxLength > freezeIndex + 2)
         {
-            int maxLength = Mathf.Min(parent1.Count, parent2.Count);
-            int point1 = Random.Range(1, maxLength - 2);
+            int point1 = Random.Range(freezeIndex + 1, maxLength - 2);
             int point2 = Random.Range(point1, maxLength - 1);
             for (int i = point1; i < point2; i++)
             {
@@ -407,10 +424,11 @@ public class GeneticAlgorithm : MonoBehaviour
         }
     }
 
+
     // Apply Mutation
     private void Mutate(List<Vector2> individual)
     {
-        for (int i = 0; i < individual.Count; i++)
+        for (int i = freezeIndex; i < individual.Count; i++) // 🔐 only mutate beyond freezeIndex
         {
             if (Random.Range(0f, 1f) < mutationRate)
             {
