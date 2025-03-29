@@ -26,8 +26,8 @@ public class RobotController : MonoBehaviour
 
     // Performance Tuning
     [Header("Performance Tuning")]
-    public float steeringSmoothing = 5f;
-    public float accelerationSmoothing = 2f;
+    public float steeringSmoothing = 500000f;
+    public float accelerationSmoothing = 50000f;
 
     // Runtime Variables
     private float currentSteeringAngle = 0f;
@@ -70,6 +70,7 @@ public class RobotController : MonoBehaviour
         if (!isActive) return;
 
         float reward = HandleTrackRewards(currentMotorTorque, currentSteeringAngle);
+        // Debug.Log($"Motor torque: {currentMotorTorque}, steer: {currentSteeringAngle}");
         totalReward += reward;
 
         float speed = Vector3.Dot(transform.forward, GetComponent<Rigidbody>().linearVelocity);
@@ -96,7 +97,7 @@ public class RobotController : MonoBehaviour
 
         if (speed > 0f)
         {
-            reward += speed > 2f ? (speed < 10f ? 1f : -0.3f) : -0.3f;
+            reward += speed > 2f ? (speed < 6f ? 1f : -0.3f) : -0.3f;
         }
         else
         {
@@ -116,10 +117,10 @@ public class RobotController : MonoBehaviour
 
             if (sensorReading.Key == "Left1" || sensorReading.Key == "Front" || sensorReading.Key == "Right1")
             {
-                if ((hitObject.Contains("MT_Turn (1)") || hitObject.Contains("MT_Turn (2)")) && steeringAngle > 30f)
+                if ((hitObject.Contains("MT_Turn (1)") || hitObject.Contains("MT_Turn (2)")) && steeringAngle > 20f)
                 {
                     Debug.Log("Turning rewards adding");
-                    reward += 1f;
+                    reward += 5f;
                 }
             }
 
@@ -146,7 +147,9 @@ public class RobotController : MonoBehaviour
     public void ManualReset()
     {
         // transform.localPosition = new Vector3(195.6539f, 0.6679955f, 192.1293f); //first env location
-        transform.localPosition = new Vector3(195.6539f, 0.6679955f, -68f); // second env location 
+        // transform.localPosition = new Vector3(195.6539f, 0.6679955f, -68f); // second env location 
+        // transform.localPosition = new Vector3(195.6539f, 0.6679955f, -147f); // second env location 
+        transform.localPosition = new Vector3(195.6539f, 0.6679955f, -105f); // second env location 
         transform.rotation = Quaternion.Euler(0f, 180f, 0f);
         Rigidbody rb = GetComponent<Rigidbody>();
         rb.isKinematic = false;
@@ -266,7 +269,10 @@ public class RobotController : MonoBehaviour
     // Apply Steering
     public void ApplySteering(float targetAngle)
     {
-        currentSteeringAngle = Mathf.Lerp(currentSteeringAngle, targetAngle, Time.deltaTime * steeringSmoothing);
+        // Debug.Log($"currentSteeringAngle : {currentSteeringAngle}, targetAngle : {targetAngle}");
+        // currentSteeringAngle = Mathf.Lerp(currentSteeringAngle, targetAngle, Time.deltaTime * 2f);
+        currentSteeringAngle = targetAngle;
+        // Debug.Log($"After clamp currentSteeringAngle : {currentSteeringAngle}, targetAngle : {targetAngle}");
         FLC.steerAngle = currentSteeringAngle;
         FRC.steerAngle = currentSteeringAngle;
     }
@@ -274,7 +280,10 @@ public class RobotController : MonoBehaviour
     // Apply Motor Torque
     public void ApplyMotorTorque(float targetTorque)
     {
-        currentMotorTorque = Mathf.Lerp(currentMotorTorque, targetTorque, Time.deltaTime * accelerationSmoothing);
+        // Debug.Log($"currentMotorTorque : {currentMotorTorque}, targetTorque : {targetTorque}");
+        // currentMotorTorque = Mathf.Lerp(currentMotorTorque, targetTorque, Time.deltaTime * accelerationSmoothing * 10f);
+        currentMotorTorque = targetTorque;
+        // Debug.Log($"After clamp currentMotorTorque : {currentMotorTorque}, targetTorque : {targetTorque}");
         FLC.motorTorque = currentMotorTorque;
         FRC.motorTorque = currentMotorTorque;
         RLC.motorTorque = currentMotorTorque;

@@ -8,7 +8,7 @@ public class GeneticAlgorithm : MonoBehaviour
     // Configuration Parameters
     public int populationSize = 1;
     public int initialGeneLength = 400; // Starting gene length
-    public float mutationRate = 0.02f;
+    public float mutationRate = 0.03f;
     public float crossoverRate = 0.7f;
     public int generations = 10000;
 
@@ -28,6 +28,7 @@ public class GeneticAlgorithm : MonoBehaviour
     private int maxCoolDownSteps = 500;
     private int coolDownStep = 0;
     private int freezeIndex = 0; // Index up to which genes are frozen
+    private List<float> possibleValues = new List<float>();
 
     // Initialization
     private void Start()
@@ -36,6 +37,7 @@ public class GeneticAlgorithm : MonoBehaviour
         currentGeneLength = initialGeneLength;
         saveFilePath = Application.persistentDataPath + "/GA_PopulationData.json";
         population = new List<List<Vector2>>();
+        InitializePossibleValues();
 
         AudioListener[] listeners = FindObjectsOfType<AudioListener>();
         foreach (AudioListener listener in listeners)
@@ -56,6 +58,14 @@ public class GeneticAlgorithm : MonoBehaviour
         }
 
         InitializeRobots();
+    }
+
+    private void InitializePossibleValues()
+    {
+        for (float value = -1f; value <= 1f; value += 0.04f)
+        {
+            possibleValues.Add((float)System.Math.Round(value, 2));
+        }
     }
 
     // Cleanup
@@ -166,7 +176,9 @@ public class GeneticAlgorithm : MonoBehaviour
         List<Vector2> individual = new List<Vector2>();
         for (int j = 0; j < length; j++)
         {
-            individual.Add(new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
+            float x = possibleValues[Random.Range((possibleValues.Count / 2) - 1, possibleValues.Count)];
+            float y = possibleValues[Random.Range(0, possibleValues.Count)];
+            individual.Add(new Vector2(x, y));
         }
         return individual;
     }
@@ -245,13 +257,18 @@ public class GeneticAlgorithm : MonoBehaviour
                 {
                     float motorTorque = population[i][currentStep].x * 400f;
                     float steeringAngle = population[i][currentStep].y * 60f;
+                    Debug.Log($" MT: {motorTorque}, SA: {steeringAngle}");
                     robotInstances[i].ManualApplyControl(motorTorque, steeringAngle);
                 }
                 else if (activeIndividuals[i])
                 {
                     if (dynamicGeneLength)
                     {
-                        ExtendIndividual(i, robotInstances[i].isOnTurn());
+                        ExtendIndividual(i, robotInstances[i].isOnTurn(1));
+                        float motorTorque = population[i][currentStep].x * 400f;
+                        float steeringAngle = population[i][currentStep].y * 60f;
+                        Debug.Log($" MT: {motorTorque}, SA: {steeringAngle}");
+                        robotInstances[i].ManualApplyControl(motorTorque, steeringAngle);
                     }
                 }
             }
@@ -299,7 +316,10 @@ public class GeneticAlgorithm : MonoBehaviour
     // Extend an Individual’s Gene Sequence
     private void ExtendIndividual(int index, bool isOnTurn)
     {
-        population[index].Add(new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
+        float x = possibleValues[Random.Range(0, possibleValues.Count)];
+        int val = isOnTurn ? ((possibleValues.Count * 2) / 3) - 1 : 0;
+        float y = possibleValues[Random.Range(val, possibleValues.Count)];
+        population[index].Add(new Vector2(x, y));
         currentGeneLength = Mathf.Max(currentGeneLength, population[index].Count);
     }
 
@@ -389,7 +409,9 @@ public class GeneticAlgorithm : MonoBehaviour
     {
         while (individual.Count < targetLength)
         {
-            individual.Add(new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
+            float x = possibleValues[Random.Range(0, possibleValues.Count)];
+            float y = possibleValues[Random.Range(0, possibleValues.Count)];
+            individual.Add(new Vector2(x, y));
         }
     }
 
