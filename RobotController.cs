@@ -39,6 +39,10 @@ public class RobotController : MonoBehaviour
     private bool isActive;
     public bool shouldRender = true; // Controls visual updates
 
+    private float totalTorqueReward = 0f;
+    private float totalSteeringReward = 0f;
+
+
     // Initialization
     private void Start()
     {
@@ -49,15 +53,17 @@ public class RobotController : MonoBehaviour
     {
         ga = geneticAlgorithm;
         individualIndex = index;
-        totalReward = 0f;
+        totalSteeringReward = 0f;
+        totalTorqueReward = 0f;
         isActive = true;
         ManualReset();
     }
 
     public void SetIndividual(List<Vector2> individual)
     {
-        currentIndividual = individual;
-        totalReward = 0f;
+        currentIndividual = individual; ;
+        totalSteeringReward = 0f;
+        totalTorqueReward = 0f;
         isActive = true;
         // ✅ Reset steering and torque for fresh generation
         currentMotorTorque = 0f;
@@ -69,70 +75,40 @@ public class RobotController : MonoBehaviour
     {
         if (!isActive) return;
 
-        float reward = HandleTrackRewards(currentMotorTorque, currentSteeringAngle);
+        float torqueReward = HandleTorqueRewards(currentMotorTorque);
+        float steeringReward = HandleSteeringRewards(currentSteeringAngle);
         // Debug.Log($"Motor torque: {currentMotorTorque}, steer: {currentSteeringAngle}");
-        totalReward += reward;
+        totalTorqueReward += torqueReward;
+        totalSteeringReward += steeringReward;
 
         float speed = Vector3.Dot(transform.forward, GetComponent<Rigidbody>().linearVelocity);
 
         if (IsOutOfTrack() || (checkSpeed && speed <= 1f))
         {
-            ga.UpdateFitness(individualIndex, totalReward, true);
+            ga.UpdateFitness(individualIndex, totalTorqueReward, totalSteeringReward, true);
             isActive = false;
             GetComponent<Rigidbody>().isKinematic = true;
         }
         else if (HandleFinalCheckpoint())
         {
-            ga.UpdateFitness(individualIndex, totalReward, true);
+            ga.UpdateFitness(individualIndex, totalTorqueReward, totalSteeringReward, true);
             isActive = false;
             GetComponent<Rigidbody>().isKinematic = true;
         }
     }
 
-    // Calculate Track Rewards
-    public float HandleTrackRewards(float motorTorque, float steeringAngle)
+    public float HandleTorqueRewards(float motorTorque)
     {
         float speed = Vector3.Dot(transform.forward, GetComponent<Rigidbody>().linearVelocity);
         float reward = 0f;
 
         if (speed > 0f)
         {
-            reward += speed > 2f ? (speed < 6f ? 1f : -0.3f) : -0.3f;
+            reward += speed > 2f ? (speed < 6f ? 1f : -0.3f) : -0.1f;
         }
         else
         {
             reward -= 1f;
-        }
-
-        // if((isOnTurn(1) || isOnTurn(2)) && steeringAngle > 0) {
-        //     Debug.Log("Turning rewards adding");
-        //     reward += 2f;
-        // }
-
-        var sensorReadings = GetSensorData();
-        foreach (var sensorReading in sensorReadings)
-        {
-            float distance = sensorReading.Value.Item1;
-            string hitObject = sensorReading.Value.Item2;
-
-            if (sensorReading.Key == "Left1" || sensorReading.Key == "Front" || sensorReading.Key == "Right1")
-            {
-                if ((hitObject.Contains("MT_Turn (1)") || hitObject.Contains("MT_Turn (2)")) && steeringAngle > 20f)
-                {
-                    Debug.Log("Turning rewards adding");
-                    reward += 5f;
-                }
-            }
-
-
-            if (hitObject.Contains("Cube") && distance < 1f)
-            {
-                reward -= 0.2f;
-            }
-            else if (sensorReading.Key == "Left3" || sensorReading.Key == "Right3")
-            {
-                reward += 0.025f * distance;
-            }
         }
 
         if (IsOutOfTrack())
@@ -142,6 +118,45 @@ public class RobotController : MonoBehaviour
 
         return reward;
     }
+
+    public float HandleSteeringRewards(float steeringAngle)
+    {
+        float speed = Vector3.Dot(transform.forward, GetComponent<Rigidbody>().linearVelocity);
+        float reward = 0f;
+
+        if (GetRoad() == 1 && steeringAngle > 10f)
+        {
+            // Debug.Log("Turning rewards adding");
+            reward += steeringAngle > 20f? 5f : 2f;
+            reward += steeringAngle >30f? 10f: 0f;
+
+        }
+
+        if (GetRoad() == 0 && steeringAngle > -10f && steeringAngle < 10f)
+            reward += 1f;
+
+        return reward;
+    }
+
+    public int GetRoad()
+    {
+        var sensorReadings = GetSensorData();
+        string[] keysToCheck = { "Left1", "Right1", "Front" };
+
+        foreach (var key in keysToCheck)
+        {
+            string hitObject = sensorReadings[key].Item2;
+            // Debug.Log($"Hitobject: {hitObject}");
+
+            if (hitObject.Contains("MT_Turn (1)") || hitObject.Contains("MT_Turn (2)"))
+            {
+                return 1;
+            }
+        }
+
+        return 0;
+    }
+
 
     // Manual Reset
     public void ManualReset()
@@ -168,6 +183,7 @@ public class RobotController : MonoBehaviour
     {
         ApplySteering(steering);
         ApplyMotorTorque(torque);
+        Debug.Log($"Torque: {torque}, steering: {currentSteeringAngle}");
         if (shouldRender)
         {
             UpdateWheelTransforms();
@@ -259,7 +275,11 @@ public class RobotController : MonoBehaviour
     private (float, string) CheckSensor(Transform sensor)
     {
         RaycastHit hit;
-        if (Physics.Raycast(sensor.position, sensor.forward, out hit, sensorRange))
+
+        // Exclude 'Robot' layer
+        int layerMask = ~LayerMask.GetMask("Robot");
+
+        if (Physics.Raycast(sensor.position, sensor.forward, out hit, sensorRange, layerMask))
         {
             return (hit.distance, hit.collider.gameObject.name);
         }
@@ -270,8 +290,8 @@ public class RobotController : MonoBehaviour
     public void ApplySteering(float targetAngle)
     {
         // Debug.Log($"currentSteeringAngle : {currentSteeringAngle}, targetAngle : {targetAngle}");
-        // currentSteeringAngle = Mathf.Lerp(currentSteeringAngle, targetAngle, Time.deltaTime * 2f);
-        currentSteeringAngle = targetAngle;
+        currentSteeringAngle = Mathf.Lerp(currentSteeringAngle, targetAngle, Time.deltaTime * 2f);
+        // currentSteeringAngle = targetAngle;
         // Debug.Log($"After clamp currentSteeringAngle : {currentSteeringAngle}, targetAngle : {targetAngle}");
         FLC.steerAngle = currentSteeringAngle;
         FRC.steerAngle = currentSteeringAngle;
