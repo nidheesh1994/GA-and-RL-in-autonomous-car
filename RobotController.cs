@@ -8,7 +8,7 @@ public class RobotController : MonoBehaviour
     [SerializeField] private Transform FLT, FRT, RLT, RRT;
 
     // Sensor Transforms
-    [SerializeField] private Transform FRS, L1S, L2S, L3S, R1S, R2S, R3S, ORS;
+    [SerializeField] private Transform FRS, L1S, L2S, L3S, R1S, R2S, R3S, ORS, Down;
 
     // Movement Parameters
     [Header("Movement Parameters")]
@@ -124,12 +124,16 @@ public class RobotController : MonoBehaviour
         float speed = Vector3.Dot(transform.forward, GetComponent<Rigidbody>().linearVelocity);
         float reward = 0f;
 
-        if (GetRoad() == 1 && steeringAngle > 10f)
+        if (GetRoad() == 1)
         {
-            // Debug.Log("Turning rewards adding");
-            reward += steeringAngle > 20f? 5f : 2f;
-            reward += steeringAngle >30f? 10f: 0f;
-
+            if (steeringAngle > 5f)
+            {
+                // Debug.Log("Turning rewards adding");
+                reward += steeringAngle > 20f ? 5f : 2f;
+                reward += steeringAngle > 30f ? 10f : 0f;
+                reward += steeringAngle > 40f ? 12f : 0f;
+            }else
+                reward += -5f;
         }
 
         if (GetRoad() == 0 && steeringAngle > -10f && steeringAngle < 10f)
@@ -141,7 +145,7 @@ public class RobotController : MonoBehaviour
     public int GetRoad()
     {
         var sensorReadings = GetSensorData();
-        string[] keysToCheck = { "Left1", "Right1", "Front" };
+        string[] keysToCheck = { "Down", };
 
         foreach (var key in keysToCheck)
         {
@@ -183,7 +187,7 @@ public class RobotController : MonoBehaviour
     {
         ApplySteering(steering);
         ApplyMotorTorque(torque);
-        Debug.Log($"Torque: {torque}, steering: {currentSteeringAngle}");
+        // Debug.Log($"Torque: {torque}, steering: {currentSteeringAngle}");
         if (shouldRender)
         {
             UpdateWheelTransforms();
@@ -208,15 +212,18 @@ public class RobotController : MonoBehaviour
     // Check if Out of Track
     public bool IsOutOfTrack()
     {
-        Collider[] hitColliders = Physics.OverlapSphere(transform.position, 2f);
-        foreach (var collider in hitColliders)
-        {
-            if (collider.gameObject.name.StartsWith("ED"))
-                return true;
-            if (collider.gameObject.name.StartsWith("MT_Road") || collider.gameObject.name.StartsWith("MT_Turn"))
-                return false;
-        }
-        return true;
+        var sensorReadings = GetSensorData();
+        string hitObject = sensorReadings["Down"].Item2;
+
+        // Debug.Log($"Down hit: {hitObject}");
+
+        if (hitObject.StartsWith("MT_Road") || hitObject.StartsWith("MT_Turn"))
+            return false; // ✅ Still on track
+
+        if (hitObject.StartsWith("ED"))
+            return true; // ❌ Explicitly off-track
+
+        return true; // ❌ Anything else = unknown = off-track
     }
 
     // Handle Final Checkpoint
@@ -246,13 +253,14 @@ public class RobotController : MonoBehaviour
     {
         return new Dictionary<string, (float, string)>
         {
-            { "Front", CheckSensor(FRS) },
-            { "Left1", CheckSensor(L1S) },
+            { "Front", CheckSensor(FRS, true) },
+            { "Left1", CheckSensor(L1S, true) },
             { "Left2", CheckSensor(L2S) },
             { "Left3", CheckSensor(L3S) },
-            { "Right1", CheckSensor(R1S) },
+            { "Right1", CheckSensor(R1S, true) },
             { "Right2", CheckSensor(R2S) },
             { "Right3", CheckSensor(R3S) },
+            { "Down", CheckSensor(Down) },
             { "ORS", CheckOrientationSensor() },
             { "ORSZ", CheckOrientationSensorZ() }
         };
@@ -272,12 +280,18 @@ public class RobotController : MonoBehaviour
         return (normalizedPitch, "OrientationZ");
     }
 
-    private (float, string) CheckSensor(Transform sensor)
+    private (float, string) CheckSensor(Transform sensor, bool draw = false)
     {
         RaycastHit hit;
 
         // Exclude 'Robot' layer
         int layerMask = ~LayerMask.GetMask("Robot");
+
+        // ✅ Only draw if this is the Down sensor
+        if (draw)
+        {
+            Debug.DrawRay(sensor.position, sensor.forward * sensorRange, Color.yellow);
+        }
 
         if (Physics.Raycast(sensor.position, sensor.forward, out hit, sensorRange, layerMask))
         {
@@ -301,7 +315,7 @@ public class RobotController : MonoBehaviour
     public void ApplyMotorTorque(float targetTorque)
     {
         // Debug.Log($"currentMotorTorque : {currentMotorTorque}, targetTorque : {targetTorque}");
-        // currentMotorTorque = Mathf.Lerp(currentMotorTorque, targetTorque, Time.deltaTime * accelerationSmoothing * 10f);
+        currentMotorTorque = Mathf.Lerp(currentMotorTorque, targetTorque, Time.deltaTime * 10f);
         currentMotorTorque = targetTorque;
         // Debug.Log($"After clamp currentMotorTorque : {currentMotorTorque}, targetTorque : {targetTorque}");
         FLC.motorTorque = currentMotorTorque;
@@ -331,12 +345,13 @@ public class RobotController : MonoBehaviour
     // Set Sensor Orientations
     private void SetSensorOrientations()
     {
-        FRS.localRotation = Quaternion.Euler(8, 0, 0);
-        L1S.localRotation = Quaternion.Euler(8, -15, 0);
+        FRS.localRotation = Quaternion.Euler(45, 0, 0);
+        L1S.localRotation = Quaternion.Euler(45, -15, 0);
         L2S.localRotation = Quaternion.Euler(8, -35, 0);
         L3S.localRotation = Quaternion.Euler(10, -90, 0);
-        R1S.localRotation = Quaternion.Euler(8, 15, 0);
+        R1S.localRotation = Quaternion.Euler(45, 15, 0);
         R2S.localRotation = Quaternion.Euler(8, 35, 0);
         R3S.localRotation = Quaternion.Euler(10, 90, 0);
+        Down.localRotation = Quaternion.Euler(90, 0, 0);
     }
 }

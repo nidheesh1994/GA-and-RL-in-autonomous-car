@@ -11,7 +11,7 @@ public class GeneticAlgorithm : MonoBehaviour
     public float crossoverRate = 0.7f;
     public int generations = 10000;
     public bool dynamicGeneLength = true;
-    public bool useSegmentCrossover = true;
+    public bool useSegmentCrossover = false;
     [SerializeField] private GameObject robotPrefab;
 
     // === Populations ===
@@ -77,7 +77,7 @@ public class GeneticAlgorithm : MonoBehaviour
     List<float> CreateGeneSequence(int len, int start = 0, int end = -1)
     {
         List<float> seq = new List<float>();
-        end = end < 0 ?  possibleValues.Count : end;
+        end = end < 0 ? possibleValues.Count : end;
         for (int i = 0; i < len; i++)
             seq.Add(possibleValues[Random.Range(start, end)]);
         return seq;
@@ -119,10 +119,10 @@ public class GeneticAlgorithm : MonoBehaviour
                 isCoolDown = false;
                 coolDownStep = 0;
             }
-            Debug.LogWarning($"Cooling down, step: {coolDownStep}.");
+            // Debug.LogWarning($"Cooling down, step: {coolDownStep}.");
             return;
         }
-        
+
         if (currentGeneration >= generations) return;
 
         if (currentStep < currentGeneLength || !AllIndividualsDone())
@@ -132,14 +132,14 @@ public class GeneticAlgorithm : MonoBehaviour
                 if (activeIndividuals[i] && currentStep < torquePopulation[i].Count)
                 {
                     float torque = torquePopulation[i][currentStep] * 400f;
-                    float steer = steeringPopulation[i][currentStep] * 60f;
+                    float steer = steeringPopulation[i][currentStep] * 90f;
                     robotInstances[i].ManualApplyControl(torque, steer);
                 }
                 else if (activeIndividuals[i] && dynamicGeneLength)
                 {
                     ExtendIndividual(i, robotInstances[i].GetRoad());
                     float torque = torquePopulation[i][currentStep] * 400f;
-                    float steer = steeringPopulation[i][currentStep] * 60f;
+                    float steer = steeringPopulation[i][currentStep] * 90f;
                     robotInstances[i].ManualApplyControl(torque, steer);
                 }
             }
@@ -176,7 +176,8 @@ public class GeneticAlgorithm : MonoBehaviour
 
     void ExtendIndividual(int index, int turn = 0)
     {
-        float t = possibleValues[Random.Range(0, possibleValues.Count)];
+        // int end = turn != 0 ? (int)(possibleValues.Count * 2 / 3) : possibleValues.Count;
+        float t = possibleValues[Random.Range((int)(possibleValues.Count/2),possibleValues.Count)];
 
         int val1 = turn > 0 ? possibleValues.Count * 2 / 3 : 0;
         int val2 = turn < 0 ? possibleValues.Count / 3 : possibleValues.Count;
@@ -213,8 +214,8 @@ public class GeneticAlgorithm : MonoBehaviour
 
         Debug.Log($"Torque best: {best}, avg: {avg}, generation: {currentGeneration}, geneLength: {currentGeneLength}");
 
-        if (avg >= 0.8f * best)
-            freezeIndexTorque = Mathf.Min(freezeIndexTorque + currentGeneLength / 10, currentGeneLength / 2);
+        // if (avg >= 0.8f * best)
+        //     freezeIndexTorque = Mathf.Min(freezeIndexTorque + currentGeneLength / 10, (int)(currentGeneLength / 3f));
 
         torquePopulation = CreateNewPopulation(torquePopulation, torqueFitnessScores, freezeIndexTorque);
     }
@@ -226,29 +227,29 @@ public class GeneticAlgorithm : MonoBehaviour
 
         Debug.Log($"Steering best: {best}, avg: {avg}, generation: {currentGeneration}, geneLength: {currentGeneLength}");
 
-        if (avg >= 0.8f * best)
-            freezeIndexSteering = Mathf.Min(freezeIndexSteering + currentGeneLength / 10, currentGeneLength / 2);
+        // if (avg >= 0.8f * best)
+        //     freezeIndexSteering = Mathf.Min(freezeIndexSteering + currentGeneLength / 10, (int)(currentGeneLength / 3));
 
         steeringPopulation = CreateNewPopulation(steeringPopulation, steeringFitnessScores, freezeIndexSteering);
     }
 
     List<List<float>> CreateNewPopulation(List<List<float>> oldPop, List<float> scores, int freezeIndex)
     {
+        // 📊 Step 2: Sort individuals based on fitness scores
+        List<int> sorted = GetSortedIndices(scores);
+        List<List<float>> newPop = new List<List<float>>();
+
         // 🔁 Step 1: Normalize all gene lengths if dynamic gene length is enabled
         if (dynamicGeneLength)
         {
             for (int i = 0; i < oldPop.Count; i++)
             {
-                ExtendToLength(oldPop[i], currentGeneLength);
+                ExtendToLength(oldPop[i], currentGeneLength, oldPop[sorted[0]]);
             }
         }
 
-        // 📊 Step 2: Sort individuals based on fitness scores
-        List<int> sorted = GetSortedIndices(scores);
-        List<List<float>> newPop = new List<List<float>>();
-
         int eliteCount = Mathf.Max(1, populationSize / 10);
-        int poolSize = populationSize / 2;
+        int poolSize = populationSize;
 
         // 🏅 Step 3: Elitism - carry top individuals unchanged
         for (int i = 0; i < eliteCount; i++)
@@ -275,8 +276,8 @@ public class GeneticAlgorithm : MonoBehaviour
 
             if (dynamicGeneLength)
             {
-                ExtendToLength(c1, currentGeneLength);
-                ExtendToLength(c2, currentGeneLength);
+                ExtendToLength(c1, currentGeneLength, oldPop[sorted[0]]); // extend using best individual
+                ExtendToLength(c2, currentGeneLength, oldPop[sorted[0]]);
             }
 
             newPop.Add(c1);
@@ -287,11 +288,22 @@ public class GeneticAlgorithm : MonoBehaviour
     }
 
 
-    void ExtendToLength(List<float> individual, int targetLength)
+    void ExtendToLength(List<float> individual, int targetLength, List<float> fallbackSource)
     {
-        while (individual.Count < targetLength)
-            individual.Add(possibleValues[Random.Range(0, possibleValues.Count)]);
+        int currentLength = individual.Count;
+
+        for (int i = currentLength; i < targetLength; i++)
+        {
+            float gene;
+            if (i < fallbackSource.Count)
+                gene = fallbackSource[i];
+            else
+                gene = possibleValues[Random.Range(0, possibleValues.Count)]; // fallback if source too short
+
+            individual.Add(gene);
+        }
     }
+
 
     void Crossover(List<float> p1, List<float> p2, out List<float> c1, out List<float> c2, int freezeIdx)
     {
@@ -327,7 +339,13 @@ public class GeneticAlgorithm : MonoBehaviour
     {
         for (int i = freezeIdx; i < individual.Count; i++)
         {
-            if (Random.value < mutationRate)
+            float dynamicRate = mutationRate;
+
+            // Higher mutation rate for tail
+            if (i > (2 * individual.Count / 5))
+                dynamicRate *= 10f;
+
+            if (Random.value < dynamicRate)
                 individual[i] = Mathf.Clamp(individual[i] + Random.Range(-0.2f, 0.2f), -1f, 1f);
         }
     }
